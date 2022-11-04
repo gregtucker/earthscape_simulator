@@ -21,6 +21,30 @@ import copy
 import datetime
 
 
+def merge_user_and_default_params(user_params, default_params):
+    """Merge default parameters into the user-parameter dictionary, adding
+    defaults where user values are absent.
+
+    Examples
+    --------
+    >>> u = {"a": 1, "d": {"da": 4}, "e": 5}
+    >>> d = {"a": 2, "b": 3, "d": {"db": 6}}
+    >>> merge_user_and_default_params(u, d)
+    >>> u["a"]
+    1
+    >>> u["b"]
+    3
+    >>> u["d"]
+    {'da': 4, 'db': 6}
+    """
+    for k in default_params.keys():
+        if k in default_params:
+            if k not in user_params.keys():
+                user_params[k] = default_params[k]
+            elif isinstance(user_params[k], dict):
+                merge_user_and_default_params(user_params[k], default_params[k])
+
+
 class IslandSimulator:
     """Simulate geologic evolution of an island or micro-continent.
 
@@ -39,7 +63,24 @@ class IslandSimulator:
         "tectonic_extension",
     )
 
-    DEFAULT_PARAMS = {
+    DEFAULT_GRID_PARAMS = {
+        "source": "file",  # "create", "file", or "grid_object"
+        "grid_file_name": "initial_island.grid",
+        "grid_object": None,
+        "grid": {
+            "HexModelGrid": [
+                {"shape": [51, 51]},
+                {"spacing": 1000.0},
+                {"xy_spacing": 1000.0},
+                {"node_layout": "rect"},
+                {"node_orientation": "horiz"},
+                {"fields": None},
+                {"boundary_conditions": None},
+            ],
+        },
+    }
+
+    DEFAULT_PROCESS_PARAMS = {
         "flexure": {"method": "flexure", "rho_mantle": 3300.0, "isostasytime": 0},
         "fluvial": {
             "K_br": 1.0e-5,
