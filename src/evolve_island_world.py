@@ -116,6 +116,7 @@ class IslandSimulator:
     DEFAULT_OUTPUT_PARAMS = {
         "plot_interval": 2000.0,  # time interval for plotting, y
         "save_interval": 25000.0,  # time interval for saving grid, y
+        "save_name": "rift-island-save",
         "ndigits": 3,  # number of digits for output files
     }
 
@@ -229,7 +230,11 @@ class IslandSimulator:
         self.plot_interval = params["plot_interval"]
         self.next_plot = self.plot_interval
         self.save_interval = params["save_interval"]
+        self.next_save = self.save_interval
         self.ndigits = params["ndigits"]
+        self.frame_num = 0  # current output image frame number
+        self.save_num = 0  # current save file frame number
+        self.save_name = params["save_name"]
 
     def update_sea_level():
         self.current_sea_level += self.sea_level_delta * np.random.randn()
