@@ -47,6 +47,14 @@ def merge_user_and_default_params(user_params, default_params):
                 merge_user_and_default_params(user_params[k], default_params[k])
 
 
+def get_or_create_node_field(grid, name, dtype="float64"):
+    """Get handle to a grid field if it exists, otherwise create it."""
+    try:
+        return grid.at_node[name]
+    except:
+        return grid.add_zeros(name, at="node", dtype=dtype, clobber=True)
+
+
 class IslandSimulator:
     """Simulate geologic evolution of an island or micro-continent."""
 
@@ -120,7 +128,9 @@ class IslandSimulator:
         np.random.seed(run_params["random_seed"])
 
         self.setup_grid(grid_params)
-        # self.setup_fields()
+        if not isinstance(self.grid, RasterModelGrid):
+            self.create_raster_grid_for_flexure()
+        self.setup_fields()
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
@@ -160,6 +170,25 @@ class IslandSimulator:
             else:
                 print("grid_object must be a Landlab grid.")
                 raise ValueError
+
+    def setup_fields(self):
+        """Get handles to various fields, creating them as needed."""
+        self.elev = get_or_create_node_field(self.grid, "topographic__elevation")
+        self.sed = get_or_create_node_field(self.grid, "soil__depth")
+        self.wse = get_or_create_node_field(self.grid, "water_surface__elevation")
+        self.is_subaerial = get_or_create_node_field(
+            self.grid, "is_subaerial", dtype="bool"
+        )
+        self.cum_depo = get_or_create_node_field(
+            self.grid, "cumulative_deposit_thickness"
+        )
+        self.thickness = get_or_create_node_field(self.grid, "upper_crust_thickness")
+        if isinstance(
+            self.grid, RasterModelGrid
+        ):  # if not raster, this field lives w/ flexure grid
+            self.load = get_or_create_node_field(
+                self.grid, "lithosphere__overlying_pressure_increment"
+            )
 
     def set_fluvial_parameters(K_br, v_s):
         self.K_br = K_br
