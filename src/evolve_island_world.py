@@ -110,10 +110,14 @@ class IslandSimulator:
     }
 
     DEFAULT_RUN_PARAMS = {
-        "random_seed": 0,
+        "random_seed": 1,
     }
 
-    DEFAULT_OUTPUT_PARAMS = {}
+    DEFAULT_OUTPUT_PARAMS = {
+        "plot_interval": 2000.0,  # time interval for plotting, y
+        "save_interval": 25000.0,  # time interval for saving grid, y
+        "ndigits": 3,  # number of digits for output files
+    }
 
     def __init__(
         self, grid_params={}, process_params={}, run_params={}, output_params={}
@@ -131,6 +135,8 @@ class IslandSimulator:
         if not isinstance(self.grid, RasterModelGrid):
             self.create_raster_grid_for_flexure()
         self.setup_fields()
+        self.setup_for_output(output_params)
+        self.setup_sea_level(process_params["sea_level"])
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
@@ -170,6 +176,7 @@ class IslandSimulator:
             else:
                 print("grid_object must be a Landlab grid.")
                 raise ValueError
+        self.perimeter_nodes = self.grid.status_at_node != self.grid.BC_NODE_IS_CORE
 
     def setup_fields(self):
         """Get handles to various fields, creating them as needed."""
@@ -213,8 +220,19 @@ class IslandSimulator:
             "lithosphere__overlying_pressure_increment", at="node"
         )
 
-    def set_fluvial_parameters(K_br, v_s):
-        self.K_br = K_br
+    def setup_sea_level(self, params):
+        self.current_sea_level = 0.0
+        self.sea_level_history = []
+        self.sea_level_delta = params["sea_level_delta"]
+
+    def setup_for_output(self, params):
+        self.plot_interval = params["plot_interval"]
+        self.next_plot = self.plot_interval
+        self.save_interval = params["save_interval"]
+        self.ndigits = params["ndigits"]
+
+    def update_sea_level():
+        self.current_sea_level += self.sea_level_delta * np.random.randn()
 
     def update():
         pass
