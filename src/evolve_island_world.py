@@ -190,6 +190,29 @@ class IslandSimulator:
                 self.grid, "lithosphere__overlying_pressure_increment"
             )
 
+    def create_raster_grid_for_flexure(self):
+        """Create a raster grid for flexure, if the main grid isn't raster.
+
+        Currently assumes main grid is hex with uniform spacing.
+
+        Examples
+        --------
+        >>> p = {"source": "create"}
+        >>> p["grid"] = {"HexModelGrid": [(3, 3), {"node_layout": "rect"}]}
+        >>> sim = IslandSimulator(grid_params=p)
+        >>> sim.flexure_grid.y_of_node.reshape((3, 3))
+        array([[ 0.   ,  0.   ,  0.   ],
+               [ 0.866,  0.866,  0.866],
+               [ 1.732,  1.732,  1.732]])
+        """
+        self.flexure_grid = RasterModelGrid(
+            (self.grid.number_of_node_rows, self.grid.number_of_node_columns),
+            xy_spacing=(self.grid.spacing, 0.866 * self.grid.spacing),
+        )
+        self.load = self.flexure_grid.add_zeros(
+            "lithosphere__overlying_pressure_increment", at="node"
+        )
+
     def set_fluvial_parameters(K_br, v_s):
         self.K_br = K_br
 
