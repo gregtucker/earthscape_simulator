@@ -10,7 +10,7 @@
 #
 
 from landlab.io.native_landlab import load_grid, save_grid
-from landlab import imshow_grid, RasterModelGrid
+from landlab import ModelGrid, imshow_grid, RasterModelGrid, create_grid
 import time
 import numpy as np
 import matplotlib as mpl
@@ -27,8 +27,8 @@ def merge_user_and_default_params(user_params, default_params):
 
     Examples
     --------
-    >>> u = {"a": 1, "d": {"da": 4}, "e": 5}
-    >>> d = {"a": 2, "b": 3, "d": {"db": 6}}
+    >>> u = {"a": 1, "d": {"da": 4}, "e": 5, "grid": {"RasterModelGrid": []}}
+    >>> d = {"a": 2, "b": 3, "d": {"db": 6}, "grid": {"HexModelGrid": []}}
     >>> merge_user_and_default_params(u, d)
     >>> u["a"]
     1
@@ -36,22 +36,19 @@ def merge_user_and_default_params(user_params, default_params):
     3
     >>> u["d"]
     {'da': 4, 'db': 6}
+    >>> u["grid"]
+    {'RasterModelGrid': []}
     """
     for k in default_params.keys():
         if k in default_params:
             if k not in user_params.keys():
                 user_params[k] = default_params[k]
-            elif isinstance(user_params[k], dict):
+            elif isinstance(user_params[k], dict) and k != "grid":
                 merge_user_and_default_params(user_params[k], default_params[k])
 
 
 class IslandSimulator:
-    """Simulate geologic evolution of an island or micro-continent.
-
-    Examples
-    --------
-    >>> sim = IslandSimulator()
-    """
+    """Simulate geologic evolution of an island or micro-continent."""
 
     ALL_PROCESSES = (
         "flexure",
@@ -104,30 +101,65 @@ class IslandSimulator:
         },
     }
 
+    DEFAULT_RUN_PARAMS = {
+        "random_seed": 0,
+    }
+
+    DEFAULT_OUTPUT_PARAMS = {}
+
     def __init__(
-        K_br=1.0e-5,  # fluvial erosion coefficient, 1/y
-        v_s=1.0,  # fluvial deposition parameter, -
-        sea_level_delta=0.4,  # scale factor for random SL variation, m
-        wave_base=50.0,  # depth to wave base, m
-        marine_diff=100.0,  # marine sediment diffusivity, m2/y
-        extension_rate=0.01,  # horizontal extension rate, m/y
-        fault_dip=60.0,  # surface fault dip, degrees
-        fault_location=4.0e4,  # location parameter for fault, m
-        detachment_depth=1.0e4,  # depth to decollement, m
-        effective_elastic_thickness=1.0e4,  # elastic thickness, m
-        crust_datum=-1.5e4,  # depth to datum in crust, m
-        unit_wt=2650.0 * 9.8,  # unit weight of load, kg / m s2
-        dt=100.0,  # time-step duration, y
-        num_iter=2500,  # number of iterations
-        plot_interval=2000.0,  # time interval for plotting, y
-        save_interval=25000.0,  # time interval for saving grid, y
-        ndigits=3,  # number of digits for output files
-        seed=1,  # random seed
-        max_elev_for_color_scale=1650.0,  # elevation for color scale in plotting, m
-        scale_fac_for_surface_water=0.3,  # surface water gets color equiv to -this times above scale, -
-        area_threshold=5.0e7,  # minimum drainage area for displayed streams, m2
+        self, grid_params={}, process_params={}, run_params={}, output_params={}
     ):
-        pass
+        """Initialize IslandSimulator."""
+
+        merge_user_and_default_params(grid_params, self.DEFAULT_GRID_PARAMS)
+        merge_user_and_default_params(process_params, self.DEFAULT_PROCESS_PARAMS)
+        merge_user_and_default_params(run_params, self.DEFAULT_RUN_PARAMS)
+        merge_user_and_default_params(output_params, self.DEFAULT_OUTPUT_PARAMS)
+
+        np.random.seed(run_params["random_seed"])
+
+        self.setup_grid(grid_params)
+        # self.setup_fields()
+
+    def setup_grid(self, grid_params):
+        """Load or create the grid.
+
+        Examples
+        --------
+        >>> p = {"source": "create"}
+        >>> p["grid"] = {"RasterModelGrid": [(4, 5)]}
+        >>> sim = IslandSimulator(grid_params=p)
+        >>> sim.grid.shape
+        (4, 5)
+        >>> from landlab.io.native_landlab import load_grid, save_grid
+        >>> save_grid(sim.grid, "test.grid", clobber=True)
+        >>> p = {"source": "file"}
+        >>> p["grid_file_name"] = "test.grid"
+        >>> sim = IslandSimulator(grid_params=p)
+        >>> sim.grid.shape
+        (4, 5)
+        >>> from landlab import RasterModelGrid
+        >>> p = {"source": "grid_object"}
+        >>> p["grid_object"] = RasterModelGrid((3, 3))
+        >>> sim = IslandSimulator(grid_params=p)
+        >>> sim.grid.shape
+        (3, 3)
+        >>> from numpy.testing import assert_raises
+        >>> p["grid_object"] = "spam"
+        >>> assert_raises(ValueError, IslandSimulator, p)
+        grid_object must be a Landlab grid.
+        """
+        if grid_params["source"] == "create":
+            self.grid = create_grid(grid_params, section="grid")
+        elif grid_params["source"] == "file":
+            self.grid = load_grid(grid_params["grid_file_name"])
+        elif grid_params["source"] == "grid_object":
+            if isinstance(grid_params["grid_object"], ModelGrid):
+                self.grid = grid_params["grid_object"]
+            else:
+                print("grid_object must be a Landlab grid.")
+                raise ValueError
 
     def set_fluvial_parameters(K_br, v_s):
         self.K_br = K_br
