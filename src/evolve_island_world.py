@@ -23,8 +23,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import copy
-
-# import cmocean
+import cmocean
 import datetime
 
 
@@ -62,17 +61,19 @@ def get_or_create_node_field(grid, name, dtype="float64"):
         return grid.add_zeros(name, at="node", dtype=dtype, clobber=True)
 
 
-def display_island(grid, current_sea_level, frame_num, ndigits):
+def display_island(grid, current_sea_level, frame_num, params):
     z = grid.at_node["topographic__elevation"]
     area = grid.at_node["drainage_area"]
-    if np.amax(area) == 0:
-        fa.run_one_step()  # re-run flow router to update the water-surface height
     wse = grid.at_node["water_surface__elevation"]
-    fresh_water_elev_scale = -(scale_fac_for_surface_water * max_elev_for_color_scale)
+    max_elev_for_color_scale = params["max_elev_for_color_scale"]
+    fresh_water_elev_scale = -(
+        params["scale_fac_for_surface_water"] * max_elev_for_color_scale
+    )
     earth_sea = z - current_sea_level
-    is_channel_or_flooded = np.logical_or(area > area_threshold, wse > z)
+    is_channel_or_flooded = np.logical_or(area > params["area_threshold"], wse > z)
     is_fresh_water = np.logical_and(is_channel_or_flooded, earth_sea > 0.0)
     earth_sea[is_fresh_water] = fresh_water_elev_scale
+    plt.clf()
     imshow_grid(
         grid,
         earth_sea,
@@ -81,7 +82,7 @@ def display_island(grid, current_sea_level, frame_num, ndigits):
         vmax=max_elev_for_color_scale,
     )
     plt.axis(False)
-    plt.savefig("island" + str(frame_num).zfill(ndigits) + ".png")
+    plt.savefig("island" + str(frame_num).zfill(params["ndigits"]) + ".png")
 
 
 class IslandSimulator:
@@ -155,6 +156,9 @@ class IslandSimulator:
         "save_interval": 25000.0,  # time interval for saving grid, y
         "save_name": "rift-island-save",
         "ndigits": 3,  # number of digits for output files
+        "max_elev_for_color_scale": 1650.0,  # elevation for color scale in plotting, m
+        "scale_fac_for_surface_water": 0.3,  # surface water gets color equiv to -this times above scale, -
+        "area_threshold": 5.0e7,  # minimum drainage area for displayed streams, m2
     }
 
     def __init__(
@@ -179,6 +183,9 @@ class IslandSimulator:
         self.setup_sea_level(process_params["sea_level"])
         self.instantiate_components(process_params)
         self.setup_for_flexure(process_params["other"])
+
+        self.fa.run_one_step()  # update surface water for display
+        display_island(self.grid, 0.0, 0, output_params)
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
