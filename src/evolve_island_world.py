@@ -229,7 +229,7 @@ class IslandSimulator:
             else:
                 print("grid_object must be a Landlab grid.")
                 raise ValueError
-        self.perimeter_nodes = self.grid.status_at_node != self.grid.BC_NODE_IS_CORE
+        self.interior_nodes = self.grid.status_at_node == self.grid.BC_NODE_IS_CORE
 
     def setup_fields(self):
         """Get handles to various fields, creating them as needed."""
@@ -323,11 +323,61 @@ class IslandSimulator:
         self.num_iter = params["num_iter"]
         self.dt = params["dt"]
 
+    def set_boundaries_for_subaerial(self):
+        self.subaerial[:] = self.elev > self.current_sea_level
+        self.grid.status_at_node[
+            np.invert(self.subaerial)
+        ] = grid.BC_NODE_IS_FIXED_VALUE
+        self.grid.status_at_node[subaerial] = grid.BC_NODE_IS_CORE
+
+    def set_boundaries_for_full_domain(self):
+        self.grid.status_at_node[self.interior_nodes] = grid.BC_NODE_IS_CORE
+
+    def update_tectonics_and_flexure(self, dt):
+
+        self.ke.run_one_step(dt)  # update extensional subsidence
+        self.load[self.grid.core_nodes] = self.unit_wt * (
+            self.thickness[self.grid.core_nodes] - self.cum_subs[self.grid.core_nodes]
+        )
+        self.fl.update()  # update flexure
+        self.elev[:] = (
+            self.crust_datum
+            + self.thickness
+            - (self.cum_subs + (self.deflection - self.init_deflection))
+        )
+
     def update_sea_level(self):
         self.current_sea_level += self.sea_level_delta * np.random.randn()
+        # print("Sea level = " + str(current_sea_level) + " m")
+        self.sea_level_history.append(self.current_sea_level)
+
+    def update_subaerial_processes(self, dt):
+        self.fa.run_one_step()
+        self.ed.run_one_step(dt)
+
+    def deposit_river_sediment_at_coast(self, dt):
+        depo_rate = self.ed._qs_in / self.grid.area_of_cell[0]
+        self.elev[self.submarine] += depo_rate[self.submarine] * dt
+
+    def update_submarine_processes(self, dt):
+        self.sd.sea_level = self.current_sea_level
+        self.sd.run_one_step(dt)
+
+    def update_deposit_and_crust_thickness(self, dt, elev_before):
+        dz = self.elev[self.grid.core_nodes] - elev_before[self.grid.core_nodes]
+        self.cum_depo[self.grid.core_nodes] += dz
+        self.thickness[grid.core_nodes] += dz
 
     def update(self, dt):
-        pass
+        self.update_tectonics_and_flexure(dt)
+        self.update_sea_level(dt)
+        self.elev_before_ero_dep = self.elev.copy()
+        self.set_boundaries_for_subaerial()
+        self.update_subaerial_processes(dt)
+        self.deposit_river_sediment_at_coast(dt)
+        self.set_boundaries_for_full_domain()
+        self.update_submarine_processes(dt)
+        self.update_deposit_and_crust_thickness(dt, elev_before_ero_dep)
 
     def update_until():
         pass
@@ -340,5 +390,5 @@ class IslandSimulator:
             dt = self.dt
 
         # TODO: use update_until to run to display or output step
-        for i in range(num_iter):
+        for i in range(1, num_iter + 1):
             self.update(dt)
