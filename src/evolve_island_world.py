@@ -11,6 +11,13 @@
 
 from landlab.io.native_landlab import load_grid, save_grid
 from landlab import ModelGrid, imshow_grid, RasterModelGrid, create_grid
+from landlab.components import (
+    FlowAccumulator,
+    SpaceLargeScaleEroder,
+    SimpleSubmarineDiffuser,
+    ListricKinematicExtender,
+    Flexure,
+)
 import time
 import numpy as np
 import matplotlib as mpl
@@ -86,9 +93,14 @@ class IslandSimulator:
     }
 
     DEFAULT_PROCESS_PARAMS = {
-        "flexure": {"method": "flexure", "rho_mantle": 3300.0, "isostasytime": 0},
+        "flexure": {
+            "method": "flexure",
+            "eet": 1.0e4,
+            "rho_mantle": 3300.0,
+        },
         "fluvial": {
             "K_br": 1.0e-5,
+            "K_sed": 1.0e-2,
             "v_s": 1.0,
         },
         "hillslope:": {},
@@ -97,16 +109,19 @@ class IslandSimulator:
             "sea_level_delta": 0.4,
         },
         "submarine_diffusion": {
-            "wave_base": 50.0,
-            "marine_diff": 100.0,
+            "sea_level": 0.0,
+            "wave_base": 60.0,
+            "shallow_water_diffusivity": 100.0,
+            "tidal_range": 2.0,
         },
         "tectonic_extension": {
             "extension_rate": 0.01,
             "fault_dip": 60.0,
             "fault_location": 4.0e4,
             "detachment_depth": 1.0e4,
-            "crust_datum": -1.5e4,
+            "track_crustal_thickness": True,
         },
+        "other": {"crust_datum": -1.5e4, "unit_weight": 2650.0 * 9.8},
     }
 
     DEFAULT_RUN_PARAMS = {
@@ -133,11 +148,15 @@ class IslandSimulator:
         np.random.seed(run_params["random_seed"])
 
         self.setup_grid(grid_params)
-        if not isinstance(self.grid, RasterModelGrid):
+        if isinstance(self.grid, RasterModelGrid):
+            self.flexure_grid = self.grid
+        else:
             self.create_raster_grid_for_flexure()
         self.setup_fields()
         self.setup_for_output(output_params)
         self.setup_sea_level(process_params["sea_level"])
+        self.instantiate_components(process_params)
+        self.setup_for_flexure(process_params["other"])
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
@@ -150,6 +169,7 @@ class IslandSimulator:
         >>> sim.grid.shape
         (4, 5)
         >>> from landlab.io.native_landlab import load_grid, save_grid
+        >>> _ = sim.grid.at_node.pop("cumulative_subsidence_depth")
         >>> save_grid(sim.grid, "test.grid", clobber=True)
         >>> p = {"source": "file"}
         >>> p["grid_file_name"] = "test.grid"
@@ -191,12 +211,9 @@ class IslandSimulator:
             self.grid, "cumulative_deposit_thickness"
         )
         self.thickness = get_or_create_node_field(self.grid, "upper_crust_thickness")
-        if isinstance(
-            self.grid, RasterModelGrid
-        ):  # if not raster, this field lives w/ flexure grid
-            self.load = get_or_create_node_field(
-                self.grid, "lithosphere__overlying_pressure_increment"
-            )
+        self.load = get_or_create_node_field(
+            self.flexure_grid, "lithosphere__overlying_pressure_increment"
+        )
 
     def create_raster_grid_for_flexure(self):
         """Create a raster grid for flexure, if the main grid isn't raster.
@@ -217,9 +234,6 @@ class IslandSimulator:
             (self.grid.number_of_node_rows, self.grid.number_of_node_columns),
             xy_spacing=(self.grid.spacing, 0.866 * self.grid.spacing),
         )
-        self.load = self.flexure_grid.add_zeros(
-            "lithosphere__overlying_pressure_increment", at="node"
-        )
 
     def setup_sea_level(self, params):
         self.current_sea_level = 0.0
@@ -235,6 +249,43 @@ class IslandSimulator:
         self.frame_num = 0  # current output image frame number
         self.save_num = 0  # current save file frame number
         self.save_name = params["save_name"]
+
+    def instantiate_components(self, params):
+        """Instantiate and initialize process components."""
+
+        self.fa = FlowAccumulator(
+            self.grid,
+            depression_finder="LakeMapperBarnes",
+            fill_surface=self.wse,
+            redirect_flow_steepest_descent=True,
+            reaccumulate_flow=True,
+        )
+
+        self.sp = SpaceLargeScaleEroder(self.grid, **params["fluvial"])
+
+        self.sd = SimpleSubmarineDiffuser(
+            self.grid,
+            **params["submarine_diffusion"],
+        )
+
+        self.ke = ListricKinematicExtender(self.grid, **params["tectonic_extension"])
+
+        self.fl = Flexure(self.flexure_grid, **params["flexure"])
+
+    def setup_for_flexure(self, params):
+        self.crust_datum = params["crust_datum"]
+        self.unit_weight = params["unit_weight"]
+        self.thickness[:] = self.elev - self.crust_datum
+        self.load[:] = self.unit_weight * self.thickness
+        self.fl.update()
+        self.deflection = self.flexure_grid.at_node[
+            "lithosphere_surface__elevation_increment"
+        ]
+        self.init_deflection = self.deflection.copy()
+        self.cum_subs = self.grid.at_node["cumulative_subsidence_depth"]
+
+        # for tracking purposes
+        self.init_thickness = self.thickness.copy()
 
     def update_sea_level():
         self.current_sea_level += self.sea_level_delta * np.random.randn()
