@@ -149,6 +149,8 @@ class IslandSimulator:
 
     DEFAULT_RUN_PARAMS = {
         "random_seed": 1,
+        "dt": 100.0,  # time-step duration, y
+        "num_iter": 2500,  # number of iterations
     }
 
     DEFAULT_OUTPUT_PARAMS = {
@@ -183,6 +185,7 @@ class IslandSimulator:
         self.setup_sea_level(process_params["sea_level"])
         self.instantiate_components(process_params)
         self.setup_for_flexure(process_params["other"])
+        self.setup_run_control(run_params)
 
         self.fa.run_one_step()  # update surface water for display
         display_island(self.grid, 0.0, 0, output_params)
@@ -316,14 +319,26 @@ class IslandSimulator:
         # for tracking purposes
         self.init_thickness = self.thickness.copy()
 
-    def update_sea_level():
+    def setup_run_control(self, params):
+        self.num_iter = params["num_iter"]
+        self.dt = params["dt"]
+
+    def update_sea_level(self):
         self.current_sea_level += self.sea_level_delta * np.random.randn()
 
-    def update():
+    def update(self, dt):
         pass
 
     def update_until():
         pass
 
-    def run():
-        pass
+    def run(self, num_iter=None, dt=None):
+
+        if num_iter is None:
+            num_iter = self.num_iter
+        if dt is None:
+            dt = self.dt
+
+        # TODO: use update_until to run to display or output step
+        for i in range(num_iter):
+            self.update(dt)
