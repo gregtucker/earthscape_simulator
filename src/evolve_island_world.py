@@ -62,6 +62,28 @@ def get_or_create_node_field(grid, name, dtype="float64"):
         return grid.add_zeros(name, at="node", dtype=dtype, clobber=True)
 
 
+def display_island(grid, current_sea_level, frame_num, ndigits):
+    z = grid.at_node["topographic__elevation"]
+    area = grid.at_node["drainage_area"]
+    if np.amax(area) == 0:
+        fa.run_one_step()  # re-run flow router to update the water-surface height
+    wse = grid.at_node["water_surface__elevation"]
+    fresh_water_elev_scale = -(scale_fac_for_surface_water * max_elev_for_color_scale)
+    earth_sea = z - current_sea_level
+    is_channel_or_flooded = np.logical_or(area > area_threshold, wse > z)
+    is_fresh_water = np.logical_and(is_channel_or_flooded, earth_sea > 0.0)
+    earth_sea[is_fresh_water] = fresh_water_elev_scale
+    imshow_grid(
+        grid,
+        earth_sea,
+        cmap=cmocean.cm.topo,
+        vmin=-max_elev_for_color_scale,
+        vmax=max_elev_for_color_scale,
+    )
+    plt.axis(False)
+    plt.savefig("island" + str(frame_num).zfill(ndigits) + ".png")
+
+
 class IslandSimulator:
     """Simulate geologic evolution of an island or micro-continent."""
 
