@@ -13,11 +13,12 @@ from landlab.io.native_landlab import load_grid, save_grid
 from landlab import ModelGrid, imshow_grid, RasterModelGrid, create_grid
 from landlab.components import (
     FlowAccumulator,
-    SpaceLargeScaleEroder,
+    ErosionDeposition,
     SimpleSubmarineDiffuser,
     ListricKinematicExtender,
     Flexure,
 )
+import sys
 import time
 import numpy as np
 import matplotlib as mpl
@@ -316,7 +317,7 @@ class IslandSimulator:
             reaccumulate_flow=True,
         )
 
-        self.sp = SpaceLargeScaleEroder(self.grid, **params["fluvial"])
+        self.sp = ErosionDeposition(self.grid, **params["fluvial"])
 
         self.sd = SimpleSubmarineDiffuser(
             self.grid,
@@ -486,3 +487,24 @@ class IslandSimulator:
                 )
                 save_grid(grid, this_save_name, clobber=True)
                 self.next_save += self.save_interval
+
+
+if __name__ == "__main__":
+    """Launch a run.
+
+    Optional command-line argument is the name of a yaml-format text file with
+    parameters. File should include sections for "grid_setup", "process",
+    "run_control", and "output". Each of these should have the format shown in
+    the defaults defined above in the class header.
+    """
+    if len(sys.argv) > 1:
+        params = load_params(sys.argv[1])
+        sim = IslandSimulator(
+            params["grid_setup"],
+            params["process"],
+            params["run_control"],
+            params["output"],
+        )
+    else:
+        sim = IslandSimulator()  # use default params
+    sim.run()
