@@ -142,8 +142,7 @@ class IslandSimulator:
             "rho_mantle": 3300.0,
         },
         "fluvial": {
-            "K_br": 1.0e-5,
-            "K_sed": 1.0e-2,
+            "K": 1.0e-5,
             "v_s": 1.0,
         },
         "hillslope:": {},
@@ -257,8 +256,8 @@ class IslandSimulator:
         self.elev = get_or_create_node_field(self.grid, "topographic__elevation")
         self.sed = get_or_create_node_field(self.grid, "soil__depth")
         self.wse = get_or_create_node_field(self.grid, "water_surface__elevation")
-        self.is_subaerial = get_or_create_node_field(
-            self.grid, "is_subaerial", dtype="bool"
+        self.is_submarine = get_or_create_node_field(
+            self.grid, "is_submarine", dtype="bool"
         )
         self.cum_depo = get_or_create_node_field(
             self.grid, "cumulative_deposit_thickness"
@@ -357,11 +356,11 @@ class IslandSimulator:
         This causes subaerial flow routing and fluvial erosion/deposition to act
         only on nodes above the current sea level.
         """
-        self.subaerial[:] = self.elev > self.current_sea_level
+        self.is_submarine[:] = self.elev <= self.current_sea_level
+        self.grid.status_at_node[self.is_submarine] = self.grid.BC_NODE_IS_FIXED_VALUE
         self.grid.status_at_node[
-            np.invert(self.subaerial)
-        ] = grid.BC_NODE_IS_FIXED_VALUE
-        self.grid.status_at_node[subaerial] = grid.BC_NODE_IS_CORE
+            np.invert(self.is_submarine)
+        ] = self.grid.BC_NODE_IS_CORE
 
     def set_boundaries_for_full_domain(self):
         """Set all interior nodes to core-node status.
@@ -369,7 +368,7 @@ class IslandSimulator:
         This undoes set_boundaries_for_subaerial, in preparation for updating
         submarine erosion, transport, and deposition.
         """
-        self.grid.status_at_node[self.interior_nodes] = grid.BC_NODE_IS_CORE
+        self.grid.status_at_node[self.interior_nodes] = self.grid.BC_NODE_IS_CORE
 
     def update_tectonics_and_flexure(self, dt):
         """Update tectonics and flexure.
@@ -384,7 +383,7 @@ class IslandSimulator:
         tectonic component.
         """
         self.ke.run_one_step(dt)  # update extensional subsidence
-        self.load[self.grid.core_nodes] = self.unit_wt * (
+        self.load[self.grid.core_nodes] = self.unit_weight * (
             self.thickness[self.grid.core_nodes] - self.cum_subs[self.grid.core_nodes]
         )
         self.fl.update()  # update flexure
@@ -402,7 +401,7 @@ class IslandSimulator:
     def update_subaerial_processes(self, dt):
         """Run subaerial flow routing and fluvial processes."""
         self.fa.run_one_step()
-        self.ed.run_one_step(dt)
+        self.sp.run_one_step(dt)
 
     def deposit_river_sediment_at_coast(self, dt):
         """Calculate deposition of river sediment along the coasts.
@@ -413,12 +412,12 @@ class IslandSimulator:
         resulting deposit thickness at each submarine "coastal" node is the
         volume sediment inflow rate times time-step duration divided by cell area.
 
-        TODO: update to avoid use of private var, and might also be good to use
+        TODO: might also be good to use
         area of all cells not just one representative (which assumes uniform cell
         area)
         """
-        depo_rate = self.ed._qs_in / self.grid.area_of_cell[0]
-        self.elev[self.submarine] += depo_rate[self.submarine] * dt
+        depo_rate = self.grid.at_node["sediment__influx"] / self.grid.area_of_cell[0]
+        self.elev[self.is_submarine] += depo_rate[self.is_submarine] * dt
 
     def update_submarine_processes(self, dt):
         """Run the submarine diffusion component for one time step dt."""
@@ -433,19 +432,19 @@ class IslandSimulator:
         """
         dz = self.elev[self.grid.core_nodes] - elev_before[self.grid.core_nodes]
         self.cum_depo[self.grid.core_nodes] += dz
-        self.thickness[grid.core_nodes] += dz
+        self.thickness[self.grid.core_nodes] += dz
 
     def update(self, dt):
         """Run all components for one time step of duration dt."""
         self.update_tectonics_and_flexure(dt)
-        self.update_sea_level(dt)
+        self.update_sea_level()
         self.elev_before_ero_dep = self.elev.copy()
         self.set_boundaries_for_subaerial()
         self.update_subaerial_processes(dt)
         self.deposit_river_sediment_at_coast(dt)
         self.set_boundaries_for_full_domain()
         self.update_submarine_processes(dt)
-        self.update_deposit_and_crust_thickness(dt, elev_before_ero_dep)
+        self.update_deposit_and_crust_thickness(dt, self.elev_before_ero_dep)
         self.current_time += dt
 
     def update_until(self, update_to_time, dt):
@@ -469,7 +468,7 @@ class IslandSimulator:
 
         remaining_time = run_duration + self.current_time
         while remaining_time > 0.0:
-            next_pause = min(self, self.next_plot, self.next_save)
+            next_pause = min(self.next_plot, self.next_save)
             self.update_until(next_pause, dt)
             if self.current_time >= self.next_plot:
                 self.frame_num += 1
