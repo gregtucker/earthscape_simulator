@@ -150,7 +150,8 @@ class IslandSimulator:
     DEFAULT_RUN_PARAMS = {
         "random_seed": 1,
         "dt": 100.0,  # time-step duration, y
-        "num_iter": 2500,  # number of iterations
+        "run_duration": 250000.0,  # duration of run, y
+        "start_time": 0.0,  # starting time of simulation, y
     }
 
     DEFAULT_OUTPUT_PARAMS = {
@@ -281,6 +282,7 @@ class IslandSimulator:
         self.frame_num = 0  # current output image frame number
         self.save_num = 0  # current save file frame number
         self.save_name = params["save_name"]
+        self.display_params = params
 
     def instantiate_components(self, params):
         """Instantiate and initialize process components."""
@@ -320,8 +322,9 @@ class IslandSimulator:
         self.init_thickness = self.thickness.copy()
 
     def setup_run_control(self, params):
-        self.num_iter = params["num_iter"]
+        self.run_duration = params["run_duration"]
         self.dt = params["dt"]
+        self.current_time = params["start_time"]
 
     def set_boundaries_for_subaerial(self):
         self.subaerial[:] = self.elev > self.current_sea_level
@@ -348,7 +351,6 @@ class IslandSimulator:
 
     def update_sea_level(self):
         self.current_sea_level += self.sea_level_delta * np.random.randn()
-        # print("Sea level = " + str(current_sea_level) + " m")
         self.sea_level_history.append(self.current_sea_level)
 
     def update_subaerial_processes(self, dt):
@@ -378,17 +380,40 @@ class IslandSimulator:
         self.set_boundaries_for_full_domain()
         self.update_submarine_processes(dt)
         self.update_deposit_and_crust_thickness(dt, elev_before_ero_dep)
+        self.current_time += dt
 
-    def update_until():
-        pass
+    def update_until(self, update_to_time, dt):
+        """Iterate up to give time."""
+        remaining_time = update_to_time - self.current_time
+        while remaining_time > 0.0:
+            dt = min(dt, remaining_time)
+            self.update(dt)
+            remaining_time -= dt
 
-    def run(self, num_iter=None, dt=None):
+    def run(self, run_duration=None, dt=None):
 
-        if num_iter is None:
-            num_iter = self.num_iter
+        if run_duration is None:
+            run_duration = self.run_duration
         if dt is None:
             dt = self.dt
 
-        # TODO: use update_until to run to display or output step
-        for i in range(1, num_iter + 1):
-            self.update(dt)
+        remaining_time = run_duration + self.current_time
+        while remaining_time > 0.0:
+            next_pause = min(self, self.next_plot, self.next_save)
+            self.update_until(next_pause, dt)
+            if self.current_time >= self.next_plot:
+                self.frame_num += 1
+                display_island(
+                    self.grid,
+                    self.current_sea_level,
+                    self.frame_num,
+                    self.display_params,
+                )
+                self.next_plot += self.plot_interval
+            if self.current_time >= self.next_save:
+                self.save_num += 1
+                this_save_name = (
+                    self.save_name + str(self.save_num).zfill(self.ndigits) + ".grid"
+                )
+                save_grid(grid, this_save_name, clobber=True)
+                self.next_save += self.save_interval
