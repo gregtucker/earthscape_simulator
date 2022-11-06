@@ -10,7 +10,7 @@
 #
 
 from landlab.io.native_landlab import load_grid, save_grid
-from landlab import ModelGrid, imshow_grid, RasterModelGrid, create_grid
+from landlab import ModelGrid, imshow_grid, RasterModelGrid, create_grid, load_params
 from landlab.components import (
     FlowAccumulator,
     ErosionDeposition,
@@ -472,6 +472,7 @@ class IslandSimulator:
             self.update_until(next_pause, dt)
             if self.current_time >= self.next_plot:
                 self.frame_num += 1
+                self.fa.run_one_step()  # re-run flow router to update the water-surface height
                 display_island(
                     self.grid,
                     self.current_sea_level,
