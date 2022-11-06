@@ -62,6 +62,25 @@ def get_or_create_node_field(grid, name, dtype="float64"):
 
 
 def display_island(grid, current_sea_level, frame_num, params):
+    """Display the island and save the image to a png file.
+
+    Parameters
+    ----------
+    grid : Landlab ModelGrid
+        Reference to the simulation grid object.
+    current_sea_level : float, m
+        Current sea level.
+    frame_num : int
+        Current frame number, for the file name.
+    params : dict
+        Dictionary containing:
+            max_elev_for_color_scale : float, m
+                Maximum elevation for color scale (higher than this gets max color)
+            scale_fac_for_surface_water : float
+                Factor that controls the color for rivers.
+            area_threshold : float
+                Rivers with drainage area >= this get a special color
+    """
     z = grid.at_node["topographic__elevation"]
     area = grid.at_node["drainage_area"]
     wse = grid.at_node["water_surface__elevation"]
@@ -269,11 +288,13 @@ class IslandSimulator:
         )
 
     def setup_sea_level(self, params):
+        """Setup variables related to varying sea level."""
         self.current_sea_level = 0.0
         self.sea_level_history = []
         self.sea_level_delta = params["sea_level_delta"]
 
     def setup_for_output(self, params):
+        """Setup variables for control of plotting and saving."""
         self.plot_interval = params["plot_interval"]
         self.next_plot = self.plot_interval
         self.save_interval = params["save_interval"]
@@ -307,6 +328,7 @@ class IslandSimulator:
         self.fl = Flexure(self.flexure_grid, **params["flexure"])
 
     def setup_for_flexure(self, params):
+        """Initialize variables for flexure and calculate initial deflection."""
         self.crust_datum = params["crust_datum"]
         self.unit_weight = params["unit_weight"]
         self.thickness[:] = self.elev - self.crust_datum
@@ -322,11 +344,18 @@ class IslandSimulator:
         self.init_thickness = self.thickness.copy()
 
     def setup_run_control(self, params):
+        """Initialize variables related to control of run timing."""
         self.run_duration = params["run_duration"]
         self.dt = params["dt"]
         self.current_time = params["start_time"]
 
     def set_boundaries_for_subaerial(self):
+        """Identify subaerial vs. marine nodes, and set marine to open-boundary
+        status.
+
+        This causes subaerial flow routing and fluvial erosion/deposition to act
+        only on nodes above the current sea level.
+        """
         self.subaerial[:] = self.elev > self.current_sea_level
         self.grid.status_at_node[
             np.invert(self.subaerial)
@@ -334,10 +363,25 @@ class IslandSimulator:
         self.grid.status_at_node[subaerial] = grid.BC_NODE_IS_CORE
 
     def set_boundaries_for_full_domain(self):
+        """Set all interior nodes to core-node status.
+
+        This undoes set_boundaries_for_subaerial, in preparation for updating
+        submarine erosion, transport, and deposition.
+        """
         self.grid.status_at_node[self.interior_nodes] = grid.BC_NODE_IS_CORE
 
     def update_tectonics_and_flexure(self, dt):
+        """Update tectonics and flexure.
 
+        Run the tectonic component to implement tectonic motion for one time
+        interval of duration dt. Update the crustal load, then use the updated
+        load to calculate isostatic deflection (flexure). Recalculate elevation
+        by summing the original crustal datum, isostatic deflection (calculated
+        as the difference between current deflection and the deflection from the
+        initial configuration, so the latter is effectively zero), the crustal
+        thickness field, and cumulative tectonic subsidence calculated by the
+        tectonic component.
+        """
         self.ke.run_one_step(dt)  # update extensional subsidence
         self.load[self.grid.core_nodes] = self.unit_wt * (
             self.thickness[self.grid.core_nodes] - self.cum_subs[self.grid.core_nodes]
@@ -350,27 +394,48 @@ class IslandSimulator:
         )
 
     def update_sea_level(self):
+        """Update sea level by adding a random increment."""
         self.current_sea_level += self.sea_level_delta * np.random.randn()
         self.sea_level_history.append(self.current_sea_level)
 
     def update_subaerial_processes(self, dt):
+        """Run subaerial flow routing and fluvial processes."""
         self.fa.run_one_step()
         self.ed.run_one_step(dt)
 
     def deposit_river_sediment_at_coast(self, dt):
+        """Calculate deposition of river sediment along the coasts.
+
+        Assumes that a side effect of the fluvial component will be a calculation
+        of fluvial volumetric sediment influx to each node, including open-boundary
+        nodes that receive flow and sediment from adjacent core nodes. The
+        resulting deposit thickness at each submarine "coastal" node is the
+        volume sediment inflow rate times time-step duration divided by cell area.
+
+        TODO: update to avoid use of private var, and might also be good to use
+        area of all cells not just one representative (which assumes uniform cell
+        area)
+        """
         depo_rate = self.ed._qs_in / self.grid.area_of_cell[0]
         self.elev[self.submarine] += depo_rate[self.submarine] * dt
 
     def update_submarine_processes(self, dt):
+        """Run the submarine diffusion component for one time step dt."""
         self.sd.sea_level = self.current_sea_level
         self.sd.run_one_step(dt)
 
     def update_deposit_and_crust_thickness(self, dt, elev_before):
+        """Update the crustal thickness and the cumulative deposit thickness.
+
+        (TODO: Note that cum depo might no longer be needed if a fluvial
+        component that tracks sediment is used)
+        """
         dz = self.elev[self.grid.core_nodes] - elev_before[self.grid.core_nodes]
         self.cum_depo[self.grid.core_nodes] += dz
         self.thickness[grid.core_nodes] += dz
 
     def update(self, dt):
+        """Run all components for one time step of duration dt."""
         self.update_tectonics_and_flexure(dt)
         self.update_sea_level(dt)
         self.elev_before_ero_dep = self.elev.copy()
@@ -383,7 +448,7 @@ class IslandSimulator:
         self.current_time += dt
 
     def update_until(self, update_to_time, dt):
-        """Iterate up to give time."""
+        """Iterate up to given time, using time-step duration dt."""
         remaining_time = update_to_time - self.current_time
         while remaining_time > 0.0:
             dt = min(dt, remaining_time)
@@ -391,7 +456,11 @@ class IslandSimulator:
             remaining_time -= dt
 
     def run(self, run_duration=None, dt=None):
+        """Run the model for given duration, or self.run_duration if none given.
 
+        Includes file output of images and model state at user-specified
+        intervals.
+        """
         if run_duration is None:
             run_duration = self.run_duration
         if dt is None:
