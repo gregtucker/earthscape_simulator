@@ -485,7 +485,7 @@ class IslandSimulator:
                 this_save_name = (
                     self.save_name + str(self.save_num).zfill(self.ndigits) + ".grid"
                 )
-                save_grid(grid, this_save_name, clobber=True)
+                save_grid(self.grid, this_save_name, clobber=True)
                 self.next_save += self.save_interval
 
 
