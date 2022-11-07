@@ -466,8 +466,8 @@ class IslandSimulator:
         if dt is None:
             dt = self.dt
 
-        remaining_time = run_duration + self.current_time
-        while remaining_time > 0.0:
+        stop_time = run_duration + self.current_time
+        while self.current_time < stop_time:
             next_pause = min(self.next_plot, self.next_save)
             self.update_until(next_pause, dt)
             if self.current_time >= self.next_plot:
