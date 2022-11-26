@@ -149,6 +149,8 @@ class IslandSimulator:
         "runoff": {},
         "sea_level": {
             "sea_level_delta": 0.4,
+            "amplitude": 0.0,
+            "period": 100000.0,
         },
         "submarine_diffusion": {
             "sea_level": 0.0,
@@ -192,7 +194,6 @@ class IslandSimulator:
         merge_user_and_default_params(process_params, self.DEFAULT_PROCESS_PARAMS)
         merge_user_and_default_params(run_params, self.DEFAULT_RUN_PARAMS)
         merge_user_and_default_params(output_params, self.DEFAULT_OUTPUT_PARAMS)
-
         np.random.seed(run_params["random_seed"])
 
         self.setup_grid(grid_params)
@@ -291,7 +292,10 @@ class IslandSimulator:
         """Setup variables related to varying sea level."""
         self.current_sea_level = 0.0
         self.sea_level_history = []
-        self.sea_level_delta = params["sea_level_delta"]
+        self._sea_level_delta = params["sea_level_delta"]
+        self._sea_level_amplitude = params["amplitude"]
+        self._sea_level_period = params["period"]
+        self._prior_base_sl = 0.0
 
     def setup_for_output(self, params):
         """Setup variables for control of plotting and saving."""
@@ -393,9 +397,12 @@ class IslandSimulator:
             - (self.cum_subs + (self.deflection - self.init_deflection))
         )
 
-    def update_sea_level(self):
+    def update_sea_level(self, current_time):
         """Update sea level by adding a random increment."""
-        self.current_sea_level += self.sea_level_delta * np.random.randn()
+        base_sl = self._sea_level_amplitude * np.sin(2.0 * np.pi * current_time / self._sea_level_period)
+        dsl = base_sl - self._prior_base_sl
+        self.current_sea_level += self._sea_level_delta * np.random.randn() + dsl
+        self._prior_base_sl = base_sl
         self.sea_level_history.append(self.current_sea_level)
 
     def update_subaerial_processes(self, dt):
@@ -437,7 +444,7 @@ class IslandSimulator:
     def update(self, dt):
         """Run all components for one time step of duration dt."""
         self.update_tectonics_and_flexure(dt)
-        self.update_sea_level()
+        self.update_sea_level(self.current_time)
         self.elev_before_ero_dep = self.elev.copy()
         self.set_boundaries_for_subaerial()
         self.update_subaerial_processes(dt)
