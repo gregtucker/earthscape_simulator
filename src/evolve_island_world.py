@@ -19,6 +19,7 @@ from landlab.components import (
     Flexure,
 )
 import sys
+import shutil
 import time
 import numpy as np
 import matplotlib as mpl
@@ -102,7 +103,9 @@ def display_island(grid, current_sea_level, frame_num, params):
         vmax=max_elev_for_color_scale,
     )
     plt.axis(False)
-    plt.savefig("island" + str(frame_num).zfill(params["ndigits"]) + ".png")
+    filename = "island" + str(frame_num).zfill(params["ndigits"]) + ".png"
+    plt.savefig(filename)
+    shutil.copy(filename, "current_island.png")
 
 
 class IslandSimulator:
@@ -159,13 +162,24 @@ class IslandSimulator:
             "tidal_range": 2.0,
         },
         "tectonic_extension": {
-            "extension_rate": 0.01,
+            "extension_rate_x": 0.01,
+            "extension_rate_y": 0.0,
             "fault_dip": 60.0,
-            "fault_location": 4.0e4,
+            "fault_x0": 4.0e4,
+            "fault_y0": 0.0,
+            "fault_strike": 60.0,
             "detachment_depth": 1.0e4,
-            "track_crustal_thickness": True,
         },
-        "other": {"crust_datum": -1.5e4, "unit_weight": 2650.0 * 9.8},
+        "other": {
+            "crust_datum": -1.5e4,
+            "unit_weight": 2650.0 * 9.8,
+            "fault_jump": {
+                "jump_interval_mean": 40000.0,
+                "jump_interval_std": 4000.0,
+                "jump_distance_mean": 5000.0,
+                "jump_distance_std": 500.0,
+            },
+        },
     }
 
     DEFAULT_RUN_PARAMS = {
@@ -205,8 +219,8 @@ class IslandSimulator:
         self.setup_for_output(output_params)
         self.setup_sea_level(process_params["sea_level"])
         self.instantiate_components(process_params)
-        self.setup_for_flexure(process_params["other"])
         self.setup_run_control(run_params)
+        self.setup_for_flexure_and_tectonics(process_params["other"])
 
         self.fa.run_one_step()  # update surface water for display
         display_island(self.grid, 0.0, 0, output_params)
@@ -263,10 +277,12 @@ class IslandSimulator:
         self.cum_depo = get_or_create_node_field(
             self.grid, "cumulative_deposit_thickness"
         )
-        self.thickness = get_or_create_node_field(self.grid, "upper_crust_thickness")
+        self.thickness = get_or_create_node_field(self.grid, "upper_crust__thickness")
+        self.fw_thickness = get_or_create_node_field(self.grid, "footwall__thickness")
         self.load = get_or_create_node_field(
             self.flexure_grid, "lithosphere__overlying_pressure_increment"
         )
+        self.elev_before_ero_dep = np.zeros(self.grid.number_of_nodes)
 
     def create_raster_grid_for_flexure(self):
         """Create a raster grid for flexure, if the main grid isn't raster.
@@ -328,10 +344,12 @@ class IslandSimulator:
         )
 
         self.ke = ListricKinematicExtender(self.grid, **params["tectonic_extension"])
+        # temporary hack: keep tectonic params
+        self._tec_params = params["tectonic_extension"].copy()
 
         self.fl = Flexure(self.flexure_grid, **params["flexure"])
 
-    def setup_for_flexure(self, params):
+    def setup_for_flexure_and_tectonics(self, params):
         """Initialize variables for flexure and calculate initial deflection."""
         self.crust_datum = params["crust_datum"]
         self.unit_weight = params["unit_weight"]
@@ -342,7 +360,27 @@ class IslandSimulator:
             "lithosphere_surface__elevation_increment"
         ]
         self.init_deflection = self.deflection.copy()
-        self.cum_subs = self.grid.at_node["cumulative_subsidence_depth"]
+
+        # tectonics needs footwall and hangingwall thickness.
+        # hangingwall should already be set by the ListricKinematicExtender.
+        self.fault_plane_elev = self.grid.at_node["fault_plane__elevation"]
+        self.hw_thickness = self.grid.at_node["hangingwall__thickness"]
+        self.fw_thickness = self.thickness - self.hw_thickness
+
+        # fault jumping
+        fj_params = params["fault_jump"]
+        if fj_params["jump_interval_mean"] > 0.0:
+            self._fault_jump_interval_mean = fj_params["jump_interval_mean"]
+            self._fault_jump_interval_std = fj_params["jump_interval_std"]
+            self._fault_jump_distance_mean = fj_params["jump_distance_mean"]
+            self._fault_jump_distance_std = fj_params["jump_distance_std"]
+            self._next_fault_jump = (
+                self.current_time
+                + self._fault_jump_interval_mean
+                + self._fault_jump_interval_std * np.random.randn()
+            )
+        else:
+            self._next_fault_jump = 0.0  # indicator that fault is not jumping
 
         # for tracking purposes
         self.init_thickness = self.thickness.copy()
@@ -374,6 +412,43 @@ class IslandSimulator:
         """
         self.grid.status_at_node[self.interior_nodes] = self.grid.BC_NODE_IS_CORE
 
+    def _handle_fault_jump(self):
+        """Implement a jump in the position of the fault plane."""
+        print(self.current_time, "FAULT JUMP!")
+        print("fpe before", np.mean(self.fault_plane_elev))
+        print("hwt before", np.mean(self.hw_thickness))
+        self._tec_params["fault_x0"] += (
+            self._fault_jump_distance_mean
+            + self._fault_jump_distance_std * np.random.randn()
+        )  # jump the fault 5km!
+        self.ke.update_fault_plane_elevation_and_hangingwall_thickness(
+            self.grid,
+            self._tec_params["fault_x0"],
+            self._tec_params["fault_y0"],
+            self._tec_params["fault_strike"],
+            self._tec_params["fault_dip"],
+            self._tec_params["detachment_depth"],
+        )
+        print("hwt intermediate", np.mean(self.hw_thickness))
+        self.hw_thickness[:] = (
+            self.elev
+            + (self.deflection - self.init_deflection)  # remove deflection
+            - self.fault_plane_elev
+        )
+        print("fpe after", np.mean(self.fault_plane_elev))
+        print("hwt after", np.mean(self.hw_thickness))
+        print("fw before", np.mean(self.fw_thickness))
+        self.fw_thickness[:] = self.fault_plane_elev - self.crust_datum
+        print("fw after", np.mean(self.fw_thickness))
+        print("thick before", np.mean(self.thickness))
+        self.thickness[:] = self.fw_thickness + self.hw_thickness
+        print("thick after", np.mean(self.thickness))
+        self._next_fault_jump += (
+            self._fault_jump_interval_mean
+            + self._fault_jump_interval_std * np.random.randn()
+        )
+        print("NEXT:", self._next_fault_jump)
+
     def update_tectonics_and_flexure(self, dt):
         """Update tectonics and flexure.
 
@@ -386,20 +461,32 @@ class IslandSimulator:
         thickness field, and cumulative tectonic subsidence calculated by the
         tectonic component.
         """
+        # print('hwt before lke')
+        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
+        # temporary hacky way...
+        if self._next_fault_jump > 0.0 and self.current_time >= self._next_fault_jump:
+            self._handle_fault_jump()
+
         self.ke.run_one_step(dt)  # update extensional subsidence
+        # print('hwt after lke')
+        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
+        self.thickness[:] = self.fw_thickness + self.hw_thickness
         self.load[self.grid.core_nodes] = self.unit_weight * (
-            self.thickness[self.grid.core_nodes] - self.cum_subs[self.grid.core_nodes]
+            self.thickness[self.grid.core_nodes]
         )
         self.fl.update()  # update flexure
+        # print('min/max deflection')
+        # print(np.amin(self.deflection-self.init_deflection))
+        # print(np.amax(self.deflection-self.init_deflection))
         self.elev[:] = (
-            self.crust_datum
-            + self.thickness
-            - (self.cum_subs + (self.deflection - self.init_deflection))
+            self.crust_datum + self.thickness - (self.deflection - self.init_deflection)
         )
 
     def update_sea_level(self, current_time):
         """Update sea level by adding a random increment."""
-        base_sl = self._sea_level_amplitude * np.sin(2.0 * np.pi * current_time / self._sea_level_period)
+        base_sl = self._sea_level_amplitude * np.sin(
+            2.0 * np.pi * current_time / self._sea_level_period
+        )
         dsl = base_sl - self._prior_base_sl
         self.current_sea_level += self._sea_level_delta * np.random.randn() + dsl
         self._prior_base_sl = base_sl
@@ -425,11 +512,17 @@ class IslandSimulator:
         """
         depo_rate = self.grid.at_node["sediment__influx"] / self.grid.area_of_cell[0]
         self.elev[self.is_submarine] += depo_rate[self.is_submarine] * dt
+        # dz = self.elev[self.grid.core_nodes] - self.elev_before_ero_dep[self.grid.core_nodes]
+        # print('After coastal dep, dz min, mean, max =')
+        # print(np.amin(dz), np.mean(dz), np.amax(dz))
 
     def update_submarine_processes(self, dt):
         """Run the submarine diffusion component for one time step dt."""
         self.sd.sea_level = self.current_sea_level
         self.sd.run_one_step(dt)
+        # dz = self.elev[self.grid.core_nodes] - self.elev_before_ero_dep[self.grid.core_nodes]
+        # print('After submarine, dz min, mean, max =')
+        # print(np.amin(dz), np.mean(dz), np.amax(dz))
 
     def update_deposit_and_crust_thickness(self, dt, elev_before):
         """Update the crustal thickness and the cumulative deposit thickness.
@@ -437,15 +530,31 @@ class IslandSimulator:
         (TODO: Note that cum depo might no longer be needed if a fluvial
         component that tracks sediment is used)
         """
-        dz = self.elev[self.grid.core_nodes] - elev_before[self.grid.core_nodes]
+        dz = (
+            self.elev[self.grid.core_nodes]
+            - self.elev_before_ero_dep[self.grid.core_nodes]
+        )
         self.cum_depo[self.grid.core_nodes] += dz
         self.thickness[self.grid.core_nodes] += dz
+        # print('hwt before recalc')
+        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
+        self.hw_thickness[:] = np.maximum(
+            self.crust_datum + self.thickness - self.fault_plane_elev, 0.0
+        )
+        # print('hwt after recalc')
+        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
+        self.fw_thickness[:] = self.thickness - self.hw_thickness
+        # print('After update, dz min, mean, max =')
+        # print(np.amin(dz), np.mean(dz), np.amax(dz))
+        # print(' and thick is')
+        # dthick = self.thickness - thick_before
+        # print(np.amin(dthick), np.mean(dthick), np.amax(dthick))
 
     def update(self, dt):
         """Run all components for one time step of duration dt."""
         self.update_tectonics_and_flexure(dt)
         self.update_sea_level(self.current_time)
-        self.elev_before_ero_dep = self.elev.copy()
+        self.elev_before_ero_dep[:] = self.elev.copy()
         self.set_boundaries_for_subaerial()
         self.update_subaerial_processes(dt)
         self.deposit_river_sediment_at_coast(dt)
