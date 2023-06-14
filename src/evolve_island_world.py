@@ -414,13 +414,10 @@ class IslandSimulator:
 
     def _handle_fault_jump(self):
         """Implement a jump in the position of the fault plane."""
-        print(self.current_time, "FAULT JUMP!")
-        print("fpe before", np.mean(self.fault_plane_elev))
-        print("hwt before", np.mean(self.hw_thickness))
         self._tec_params["fault_x0"] += (
             self._fault_jump_distance_mean
             + self._fault_jump_distance_std * np.random.randn()
-        )  # jump the fault 5km!
+        )
         self.ke.update_fault_plane_elevation_and_hangingwall_thickness(
             self.grid,
             self._tec_params["fault_x0"],
@@ -429,25 +426,17 @@ class IslandSimulator:
             self._tec_params["fault_dip"],
             self._tec_params["detachment_depth"],
         )
-        print("hwt intermediate", np.mean(self.hw_thickness))
         self.hw_thickness[:] = (
             self.elev
             + (self.deflection - self.init_deflection)  # remove deflection
             - self.fault_plane_elev
         )
-        print("fpe after", np.mean(self.fault_plane_elev))
-        print("hwt after", np.mean(self.hw_thickness))
-        print("fw before", np.mean(self.fw_thickness))
         self.fw_thickness[:] = self.fault_plane_elev - self.crust_datum
-        print("fw after", np.mean(self.fw_thickness))
-        print("thick before", np.mean(self.thickness))
         self.thickness[:] = self.fw_thickness + self.hw_thickness
-        print("thick after", np.mean(self.thickness))
         self._next_fault_jump += (
             self._fault_jump_interval_mean
             + self._fault_jump_interval_std * np.random.randn()
         )
-        print("NEXT:", self._next_fault_jump)
 
     def update_tectonics_and_flexure(self, dt):
         """Update tectonics and flexure.
@@ -461,23 +450,15 @@ class IslandSimulator:
         thickness field, and cumulative tectonic subsidence calculated by the
         tectonic component.
         """
-        # print('hwt before lke')
-        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
-        # temporary hacky way...
         if self._next_fault_jump > 0.0 and self.current_time >= self._next_fault_jump:
             self._handle_fault_jump()
 
         self.ke.run_one_step(dt)  # update extensional subsidence
-        # print('hwt after lke')
-        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
         self.thickness[:] = self.fw_thickness + self.hw_thickness
         self.load[self.grid.core_nodes] = self.unit_weight * (
             self.thickness[self.grid.core_nodes]
         )
         self.fl.update()  # update flexure
-        # print('min/max deflection')
-        # print(np.amin(self.deflection-self.init_deflection))
-        # print(np.amax(self.deflection-self.init_deflection))
         self.elev[:] = (
             self.crust_datum + self.thickness - (self.deflection - self.init_deflection)
         )
@@ -512,17 +493,11 @@ class IslandSimulator:
         """
         depo_rate = self.grid.at_node["sediment__influx"] / self.grid.area_of_cell[0]
         self.elev[self.is_submarine] += depo_rate[self.is_submarine] * dt
-        # dz = self.elev[self.grid.core_nodes] - self.elev_before_ero_dep[self.grid.core_nodes]
-        # print('After coastal dep, dz min, mean, max =')
-        # print(np.amin(dz), np.mean(dz), np.amax(dz))
 
     def update_submarine_processes(self, dt):
         """Run the submarine diffusion component for one time step dt."""
         self.sd.sea_level = self.current_sea_level
         self.sd.run_one_step(dt)
-        # dz = self.elev[self.grid.core_nodes] - self.elev_before_ero_dep[self.grid.core_nodes]
-        # print('After submarine, dz min, mean, max =')
-        # print(np.amin(dz), np.mean(dz), np.amax(dz))
 
     def update_deposit_and_crust_thickness(self, dt, elev_before):
         """Update the crustal thickness and the cumulative deposit thickness.
@@ -536,19 +511,10 @@ class IslandSimulator:
         )
         self.cum_depo[self.grid.core_nodes] += dz
         self.thickness[self.grid.core_nodes] += dz
-        # print('hwt before recalc')
-        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
         self.hw_thickness[:] = np.maximum(
             self.crust_datum + self.thickness - self.fault_plane_elev, 0.0
         )
-        # print('hwt after recalc')
-        # print(np.min(self.hw_thickness), np.mean(self.hw_thickness), np.max(self.hw_thickness))
         self.fw_thickness[:] = self.thickness - self.hw_thickness
-        # print('After update, dz min, mean, max =')
-        # print(np.amin(dz), np.mean(dz), np.amax(dz))
-        # print(' and thick is')
-        # dthick = self.thickness - thick_before
-        # print(np.amin(dthick), np.mean(dthick), np.amax(dthick))
 
     def update(self, dt):
         """Run all components for one time step of duration dt."""
