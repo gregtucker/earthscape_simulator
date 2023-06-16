@@ -187,6 +187,7 @@ class IslandSimulator:
         "dt": 100.0,  # time-step duration, y
         "run_duration": 250000.0,  # duration of run, y
         "start_time": 0.0,  # starting time of simulation, y
+        "click_years_per_sec": 0.0,  # click rate in sim yrs per clock sec (0 means max speed)
     }
 
     DEFAULT_OUTPUT_PARAMS = {
@@ -390,6 +391,7 @@ class IslandSimulator:
         self.run_duration = params["run_duration"]
         self.dt = params["dt"]
         self.current_time = params["start_time"]
+        self.click_years_per_sec = params["click_years_per_sec"]
 
     def set_boundaries_for_subaerial(self):
         """Identify subaerial vs. marine nodes, and set marine to open-boundary
@@ -529,29 +531,37 @@ class IslandSimulator:
         self.update_deposit_and_crust_thickness(dt, self.elev_before_ero_dep)
         self.current_time += dt
 
-    def update_until(self, update_to_time, dt):
+    def update_until(self, update_to_time, dt, click_yps=0.0):
         """Iterate up to given time, using time-step duration dt."""
         remaining_time = update_to_time - self.current_time
         while remaining_time > 0.0:
             dt = min(dt, remaining_time)
+            start_time = time.time()
             self.update(dt)
+            end_time = time.time()
+            if click_yps > 0.0:
+                click_dur = dt / click_yps
+                time.sleep(max(0.0, click_dur - (end_time - start_time)))
             remaining_time -= dt
 
-    def run(self, run_duration=None, dt=None):
+    def run(self, run_duration=None, dt=None, click_years_per_sec=None):
         """Run the model for given duration, or self.run_duration if none given.
 
         Includes file output of images and model state at user-specified
         intervals.
         """
+        start_time = time.time()
         if run_duration is None:
             run_duration = self.run_duration
         if dt is None:
             dt = self.dt
+        if click_years_per_sec is None:
+            click_years_per_sec = self.click_years_per_sec
 
         stop_time = run_duration + self.current_time
         while self.current_time < stop_time:
             next_pause = min(self.next_plot, self.next_save)
-            self.update_until(next_pause, dt)
+            self.update_until(next_pause, dt, click_yps=click_years_per_sec)
             if self.current_time >= self.next_plot:
                 self.frame_num += 1
                 self.fa.run_one_step()  # re-run flow router to update the water-surface height
@@ -569,6 +579,9 @@ class IslandSimulator:
                 )
                 save_grid(self.grid, this_save_name, clobber=True)
                 self.next_save += self.save_interval
+        rtime = time.time() - start_time
+        print("Run loop time", rtime)
+        print("Rate", self.run_duration / rtime, "years per sec")
 
 
 if __name__ == "__main__":
