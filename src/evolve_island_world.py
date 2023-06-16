@@ -105,7 +105,7 @@ def display_island(grid, current_sea_level, frame_num, params):
     plt.axis(False)
     filename = "island" + str(frame_num).zfill(params["ndigits"]) + ".png"
     plt.savefig(filename)
-    shutil.copy(filename, "current_island.png")
+    shutil.copy(filename, params["path_for_latest_image"] + "/" + "current_island.png")
 
 
 class IslandSimulator:
@@ -198,6 +198,7 @@ class IslandSimulator:
         "max_elev_for_color_scale": 1650.0,  # elevation for color scale in plotting, m
         "scale_fac_for_surface_water": 0.3,  # surface water gets color equiv to -this times above scale, -
         "area_threshold": 5.0e7,  # minimum drainage area for displayed streams, m2
+        "path_for_latest_image": "."  # file path for location of latest output image
     }
 
     def __init__(
