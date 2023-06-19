@@ -18,5 +18,4 @@ html_for_island_display = """
 @app.route("/")
 def hello_world():
     return html_for_island_display
-    #    return '<img src="' + url_for("static", filename="current_island.png") + '"></img>' 
 
