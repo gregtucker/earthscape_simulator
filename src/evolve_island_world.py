@@ -63,7 +63,7 @@ def get_or_create_node_field(grid, name, dtype="float64"):
         return grid.add_zeros(name, at="node", dtype=dtype, clobber=True)
 
 
-def display_island(grid, current_sea_level, frame_num, params):
+def display_island(grid, current_sea_level, frame_num, params, sim_time=-1.0):
     """Display the island and save the image to a png file.
 
     Parameters
@@ -82,6 +82,8 @@ def display_island(grid, current_sea_level, frame_num, params):
                 Factor that controls the color for rivers.
             area_threshold : float
                 Rivers with drainage area >= this get a special color
+    sim_time : float (optional)
+        Current time in simulation, yr (default -1 means do not display time)
     """
     z = grid.at_node["topographic__elevation"]
     area = grid.at_node["drainage_area"]
@@ -103,6 +105,14 @@ def display_island(grid, current_sea_level, frame_num, params):
         vmax=max_elev_for_color_scale,
     )
     plt.axis(False)
+    if sim_time != -1:
+        if sim_time > 1.0e6:
+            time_unit = " million"
+            sim_time /= 1.0e6
+        else:
+            time_unit = " thousand"
+            sim_time /= 1.0e3
+        plt.title("Time = " + str(round(sim_time, 2) + time_unit + " years")
     filename = "island" + str(frame_num).zfill(params["ndigits"]) + ".png"
     plt.savefig(filename)
     shutil.copy(filename, params["path_for_latest_image"] + "/" + "current_island.png")
@@ -225,7 +235,7 @@ class IslandSimulator:
         self.setup_for_flexure_and_tectonics(process_params["other"])
 
         self.fa.run_one_step()  # update surface water for display
-        display_island(self.grid, 0.0, 0, output_params)
+        display_island(self.grid, 0.0, 0, output_params, sim_time=0.0)
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
@@ -494,8 +504,33 @@ class IslandSimulator:
         area of all cells not just one representative (which assumes uniform cell
         area)
         """
-        depo_rate = self.grid.at_node["sediment__influx"] / self.grid.area_of_cell[0]
-        self.elev[self.is_submarine] += depo_rate[self.is_submarine] * dt
+        # algorithm to spread sediment offshore of river mouths
+        qs_in = self.grid.at_node["sediment__influx"]
+        outlet_nodes = np.where(
+            np.logical_and(self.is_submarine, qs_in > 0.0)
+        )[0]
+        depo = dt * qs_in[outlet_nodes] / self.grid.area_of_cell[0]  # depth deposited this time step
+        outlets_sorted = np.flip(np.argsort(qs_in[outlet_nodes]))  # do the biggest first
+        for i in outlets_sorted:
+            node = outlet_nodes[i]
+            wdepth = self.current_sea_level - self.elev[node]
+            local_dep = min(depo[i], wdepth)
+            remaining_dep = depo[i] - local_dep
+            self.elev[node] += local_dep  # drop it here
+            counter = 0
+            while remaining_dep > 0.0:  # as long as there's any left, move it to the deepest adjacent node
+                nbrs = self.grid.adjacent_nodes_at_node[node]
+                target = nbrs[np.argmin(self.elev[nbrs])]
+                local_dep = min(remaining_dep, self.current_sea_level - self.elev[target])
+                if local_dep == 0.0:
+                    local_dep = remaining_dep
+                self.elev[target] += local_dep
+                remaining_dep -= local_dep
+                node = target
+                counter += 1
+                if counter > 100:
+                    print("INF LOOP!")
+                    break
 
     def update_submarine_processes(self, dt):
         """Run the submarine diffusion component for one time step dt."""
@@ -571,6 +606,7 @@ class IslandSimulator:
                     self.current_sea_level,
                     self.frame_num,
                     self.display_params,
+                    sim_time=self.current_time,
                 )
                 self.next_plot += self.plot_interval
             if self.current_time >= self.next_save:
