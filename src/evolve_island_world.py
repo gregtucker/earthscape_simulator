@@ -9,24 +9,27 @@
 # a hypothetical island micro-continent.
 #
 
-from landlab.io.native_landlab import load_grid, save_grid
-from landlab import ModelGrid, imshow_grid, RasterModelGrid, create_grid, load_params
-from landlab.components import (
-    FlowAccumulator,
-    ErosionDeposition,
-    SimpleSubmarineDiffuser,
-    ListricKinematicExtender,
-    Flexure,
-)
-import sys
+import copy
+import datetime
 import shutil
+import sys
 import time
-import numpy as np
+
+import cmocean
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-import copy
-import cmocean
-import datetime
+import numpy as np
+from landlab import ModelGrid, RasterModelGrid, create_grid, imshow_grid, load_params
+from landlab.components import (
+    ErosionDeposition,
+    Flexure,
+    FlowAccumulator,
+    ListricKinematicExtender,
+    SimpleSubmarineDiffuser,
+)
+from landlab.io.native_landlab import load_grid, save_grid
+from igneous_intruder import IgneousIntruder
+from graphics import display_island
 
 
 def merge_user_and_default_params(user_params, default_params):
@@ -63,59 +66,62 @@ def get_or_create_node_field(grid, name, dtype="float64"):
         return grid.add_zeros(name, at="node", dtype=dtype, clobber=True)
 
 
-def display_island(grid, current_sea_level, frame_num, params, sim_time=-1.0):
-    """Display the island and save the image to a png file.
+# def old_display_island(grid, current_sea_level, frame_num, params, sim_time=-1.0, procs=""):
+#     """Display the island and save the image to a png file.
 
-    Parameters
-    ----------
-    grid : Landlab ModelGrid
-        Reference to the simulation grid object.
-    current_sea_level : float, m
-        Current sea level.
-    frame_num : int
-        Current frame number, for the file name.
-    params : dict
-        Dictionary containing:
-            max_elev_for_color_scale : float, m
-                Maximum elevation for color scale (higher than this gets max color)
-            scale_fac_for_surface_water : float
-                Factor that controls the color for rivers.
-            area_threshold : float
-                Rivers with drainage area >= this get a special color
-    sim_time : float (optional)
-        Current time in simulation, yr (default -1 means do not display time)
-    """
-    z = grid.at_node["topographic__elevation"]
-    area = grid.at_node["drainage_area"]
-    wse = grid.at_node["water_surface__elevation"]
-    max_elev_for_color_scale = params["max_elev_for_color_scale"]
-    fresh_water_elev_scale = -(
-        params["scale_fac_for_surface_water"] * max_elev_for_color_scale
-    )
-    earth_sea = z - current_sea_level
-    is_channel_or_flooded = np.logical_or(area > params["area_threshold"], wse > z)
-    is_fresh_water = np.logical_and(is_channel_or_flooded, earth_sea > 0.0)
-    earth_sea[is_fresh_water] = fresh_water_elev_scale
-    plt.clf()
-    imshow_grid(
-        grid,
-        earth_sea,
-        cmap=cmocean.cm.topo,
-        vmin=-max_elev_for_color_scale,
-        vmax=max_elev_for_color_scale,
-    )
-    plt.axis(False)
-    if sim_time != -1:
-        if sim_time > 1.0e6:
-            time_unit = " million"
-            sim_time /= 1.0e6
-        else:
-            time_unit = " thousand"
-            sim_time /= 1.0e3
-        plt.title("Time = " + str(round(sim_time, 2) + time_unit + " years")
-    filename = "island" + str(frame_num).zfill(params["ndigits"]) + ".png"
-    plt.savefig(filename)
-    shutil.copy(filename, params["path_for_latest_image"] + "/" + "current_island.png")
+#     Parameters
+#     ----------
+#     grid : Landlab ModelGrid
+#         Reference to the simulation grid object.
+#     current_sea_level : float, m
+#         Current sea level.
+#     frame_num : int
+#         Current frame number, for the file name.
+#     params : dict
+#         Dictionary containing:
+#             max_elev_for_color_scale : float, m
+#                 Maximum elevation for color scale (higher than this gets max color)
+#             scale_fac_for_surface_water : float
+#                 Factor that controls the color for rivers.
+#             area_threshold : float
+#                 Rivers with drainage area >= this get a special color
+#     sim_time : float (optional)
+#         Current time in simulation, yr (default -1 means do not display time)
+#     """
+#     z = grid.at_node["topographic__elevation"]
+#     area = grid.at_node["drainage_area"]
+#     wse = grid.at_node["water_surface__elevation"]
+#     max_elev_for_color_scale = params["max_elev_for_color_scale"]
+#     fresh_water_elev_scale = -(
+#         params["scale_fac_for_surface_water"] * max_elev_for_color_scale
+#     )
+#     earth_sea = z - current_sea_level
+#     is_channel_or_flooded = np.logical_or(area > params["area_threshold"], wse > z)
+#     is_fresh_water = np.logical_and(is_channel_or_flooded, earth_sea > 0.0)
+#     earth_sea[is_fresh_water] = fresh_water_elev_scale
+#     plt.clf()
+#     imshow_grid(
+#         grid,
+#         earth_sea,
+#         cmap=cmocean.cm.topo,
+#         vmin=-max_elev_for_color_scale,
+#         vmax=max_elev_for_color_scale,
+#     )
+#     plt.axis(False)
+#     if sim_time != -1:
+#         if sim_time > 1.0e6:
+#             time_unit = " million"
+#             sim_time /= 1.0e6
+#         else:
+#             time_unit = " thousand"
+#             sim_time /= 1.0e3
+#         ttl = "Time = " + str(round(sim_time, 2)) + time_unit + " years"
+#         if len(procs) > 0:
+#             ttl += "\nProcesses: " + procs
+#         plt.title(ttl)
+#     filename = "island" + str(frame_num).zfill(params["ndigits"]) + ".png"
+#     plt.savefig(filename)
+#     shutil.copy(filename, params["path_for_latest_image"] + "/" + "current_island.png")
 
 
 class IslandSimulator:
@@ -161,9 +167,12 @@ class IslandSimulator:
         "hillslope:": {},
         "runoff": {},
         "sea_level": {
+            "source": "random",
+            "sea_level_file_name": None,
             "sea_level_delta": 0.4,
             "amplitude": 0.0,
             "period": 100000.0,
+            "drift": 0.0,
         },
         "submarine_diffusion": {
             "sea_level": 0.0,
@@ -180,6 +189,19 @@ class IslandSimulator:
             "fault_strike": 60.0,
             "detachment_depth": 1.0e4,
         },
+        "igneous_intrusion": {
+            "episode_duration": 1.0e5,
+            "episode_start_time": 0.0,
+            "mean_waiting_time": 1.0e4,
+            "thickness_min": 100.0,
+            "thickness_max": 1000.0,
+            "radius_min": 1000.0,
+            "radius_max": 10000.0,
+            "log_duration_min": 4.0,
+            "log_duration_max": 6.0,
+            "depth_min": 1000.0,
+            "depth_max": 20000.0,
+        },
         "other": {
             "crust_datum": -1.5e4,
             "unit_weight": 2650.0 * 9.8,
@@ -189,6 +211,7 @@ class IslandSimulator:
                 "jump_distance_mean": 5000.0,
                 "jump_distance_std": 500.0,
             },
+            "extension_duration": 3.0e6,
         },
     }
 
@@ -208,7 +231,7 @@ class IslandSimulator:
         "max_elev_for_color_scale": 1650.0,  # elevation for color scale in plotting, m
         "scale_fac_for_surface_water": 0.3,  # surface water gets color equiv to -this times above scale, -
         "area_threshold": 5.0e7,  # minimum drainage area for displayed streams, m2
-        "path_for_latest_image": "."  # file path for location of latest output image
+        "path_for_latest_image": ".",  # file path for location of latest output image
     }
 
     def __init__(
@@ -233,9 +256,23 @@ class IslandSimulator:
         self.instantiate_components(process_params)
         self.setup_run_control(run_params)
         self.setup_for_flexure_and_tectonics(process_params["other"])
+        self.setup_for_igneous_intrusion(process_params["igneous_intrusion"])
 
         self.fa.run_one_step()  # update surface water for display
-        display_island(self.grid, 0.0, 0, output_params, sim_time=0.0)
+        procs = "Sea-level change"
+        if self._extension_duration > 0.0:
+            procs += ", tectonic extension"
+        display_island(
+            self.grid,
+            self.sea_level_history,
+            self.mean_elevation_history,
+            self.dt,
+            0,
+            output_params,
+            sim_time=0.0,
+            procs=procs,
+        )
+
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
@@ -319,11 +356,19 @@ class IslandSimulator:
     def setup_sea_level(self, params):
         """Setup variables related to varying sea level."""
         self.current_sea_level = 0.0
-        self.sea_level_history = []
-        self._sea_level_delta = params["sea_level_delta"]
-        self._sea_level_amplitude = params["amplitude"]
-        self._sea_level_period = params["period"]
-        self._prior_base_sl = 0.0
+        self.sea_level_history = [self.current_sea_level]
+        self.mean_elevation_history = [np.mean(self.elev[self.elev > 0.0])]
+        self._sea_level_option = params["source"][0].lower()
+        if self._sea_level_option == "r":  # "random" option
+            self._sea_level_delta = params["sea_level_delta"]
+            self._sea_level_amplitude = params["amplitude"]
+            self._sea_level_period = params["period"]
+            self._prior_base_sl = 0.0
+        elif self._sea_level_option == "f":  # file option
+            self._sl_curve = np.loadtxt(params["sea_level_file_name"], delimiter=",")
+        plt.plot(self._sl_curve[:, 0], self._sl_curve[:, 1])
+        plt.savefig("sltest.png")
+        self._sea_level_drift = params["drift"]
 
     def setup_for_output(self, params):
         """Setup variables for control of plotting and saving."""
@@ -356,6 +401,7 @@ class IslandSimulator:
         )
 
         self.ke = ListricKinematicExtender(self.grid, **params["tectonic_extension"])
+
         # temporary hack: keep tectonic params
         self._tec_params = params["tectonic_extension"].copy()
 
@@ -371,6 +417,7 @@ class IslandSimulator:
         self.deflection = self.flexure_grid.at_node[
             "lithosphere_surface__elevation_increment"
         ]
+        self._extension_duration = params["extension_duration"]
         self.init_deflection = self.deflection.copy()
 
         # tectonics needs footwall and hangingwall thickness.
@@ -403,6 +450,16 @@ class IslandSimulator:
         self.dt = params["dt"]
         self.current_time = params["start_time"]
         self.click_years_per_sec = params["click_years_per_sec"]
+        self.tec_counter = 0
+        self.tec_interval = 4
+
+    def setup_for_igneous_intrusion(self, params):
+        self.intruder = IgneousIntruder(
+            self.grid,
+            contacts=[self.elev, self.fault_plane_elev],
+            layers=[self.hw_thickness, self.fw_thickness],
+            **params,
+        )
 
     def set_boundaries_for_subaerial(self):
         """Identify subaerial vs. marine nodes, and set marine to open-boundary
@@ -427,15 +484,18 @@ class IslandSimulator:
 
     def _handle_fault_jump(self):
         """Implement a jump in the position of the fault plane."""
-        self._tec_params["fault_x0"] += (
+        jump_distance = (
             self._fault_jump_distance_mean
             + self._fault_jump_distance_std * np.random.randn()
         )
+        new_strike = self._tec_params["fault_strike"] + 5 * np.random.randn()
+
+        self._tec_params["fault_x0"] += jump_distance
         self.ke.update_fault_plane_elevation_and_hangingwall_thickness(
             self.grid,
             self._tec_params["fault_x0"],
             self._tec_params["fault_y0"],
-            self._tec_params["fault_strike"],
+            new_strike,
             self._tec_params["fault_dip"],
             self._tec_params["detachment_depth"],
         )
@@ -450,6 +510,7 @@ class IslandSimulator:
             self._fault_jump_interval_mean
             + self._fault_jump_interval_std * np.random.randn()
         )
+        print("FAULT JUMP BY", jump_distance, "km; strike", new_strike)
 
     def update_tectonics_and_flexure(self, dt):
         """Update tectonics and flexure.
@@ -463,10 +524,14 @@ class IslandSimulator:
         thickness field, and cumulative tectonic subsidence calculated by the
         tectonic component.
         """
-        if self._next_fault_jump > 0.0 and self.current_time >= self._next_fault_jump:
-            self._handle_fault_jump()
+        if self.current_time < self._extension_duration:
+            if (
+                self._next_fault_jump > 0.0
+                and self.current_time >= self._next_fault_jump
+            ):
+                self._handle_fault_jump()
+            self.ke.run_one_step(dt)  # update extensional subsidence
 
-        self.ke.run_one_step(dt)  # update extensional subsidence
         self.thickness[:] = self.fw_thickness + self.hw_thickness
         self.load[self.grid.core_nodes] = self.unit_weight * (
             self.thickness[self.grid.core_nodes]
@@ -478,13 +543,23 @@ class IslandSimulator:
 
     def update_sea_level(self, current_time):
         """Update sea level by adding a random increment."""
-        base_sl = self._sea_level_amplitude * np.sin(
-            2.0 * np.pi * current_time / self._sea_level_period
-        )
-        dsl = base_sl - self._prior_base_sl
-        self.current_sea_level += self._sea_level_delta * np.random.randn() + dsl
-        self._prior_base_sl = base_sl
+        if self._sea_level_option == "r":  # "random"
+            base_sl = self._sea_level_amplitude * np.sin(
+                2.0 * np.pi * current_time / self._sea_level_period
+            )
+            dsl = base_sl - self._prior_base_sl
+            self.current_sea_level += (
+                self._sea_level_delta * np.random.randn() + dsl + self._sea_level_drift
+            )
+            self._prior_base_sl = base_sl
+        elif self._sea_level_option == "f":  # from file
+            self.current_sea_level = (
+                np.interp(current_time, self._sl_curve[:, 0], self._sl_curve[:, 1])
+                - self._sea_level_drift * current_time
+            )
+            print(current_time, self.current_sea_level)
         self.sea_level_history.append(self.current_sea_level)
+        self.mean_elevation_history.append(np.mean(self.elev[self.elev > 0.0]))
 
     def update_subaerial_processes(self, dt):
         """Run subaerial flow routing and fluvial processes."""
@@ -506,11 +581,13 @@ class IslandSimulator:
         """
         # algorithm to spread sediment offshore of river mouths
         qs_in = self.grid.at_node["sediment__influx"]
-        outlet_nodes = np.where(
-            np.logical_and(self.is_submarine, qs_in > 0.0)
-        )[0]
-        depo = dt * qs_in[outlet_nodes] / self.grid.area_of_cell[0]  # depth deposited this time step
-        outlets_sorted = np.flip(np.argsort(qs_in[outlet_nodes]))  # do the biggest first
+        outlet_nodes = np.where(np.logical_and(self.is_submarine, qs_in > 0.0))[0]
+        depo = (
+            dt * qs_in[outlet_nodes] / self.grid.area_of_cell[0]
+        )  # depth deposited this time step
+        outlets_sorted = np.flip(
+            np.argsort(qs_in[outlet_nodes])
+        )  # do the biggest first
         for i in outlets_sorted:
             node = outlet_nodes[i]
             wdepth = self.current_sea_level - self.elev[node]
@@ -518,10 +595,17 @@ class IslandSimulator:
             remaining_dep = depo[i] - local_dep
             self.elev[node] += local_dep  # drop it here
             counter = 0
-            while remaining_dep > 0.0:  # as long as there's any left, move it to the deepest adjacent node
+            while (
+                remaining_dep > 0.0
+            ):  # as long as there's any left, move it to the deepest adjacent node
                 nbrs = self.grid.adjacent_nodes_at_node[node]
                 target = nbrs[np.argmin(self.elev[nbrs])]
-                local_dep = min(remaining_dep, self.current_sea_level - self.elev[target])
+                if self.elev[target] >= self.elev[node]:
+                    local_dep = remaining_dep
+                else:
+                    local_dep = min(
+                        remaining_dep, self.current_sea_level - self.elev[target]
+                    )
                 if local_dep == 0.0:
                     local_dep = remaining_dep
                 self.elev[target] += local_dep
@@ -531,6 +615,38 @@ class IslandSimulator:
                 if counter > 100:
                     print("INF LOOP!")
                     break
+
+    def deposit_river_sediment_at_coast2(self, dt):
+        """Calculate deposition of river sediment along the coasts."""
+        # algorithm to spread sediment offshore of river mouths
+        qs_in = self.grid.at_node["sediment__influx"]
+        water_depth = self.current_sea_level - self.elev
+        self.is_submarine[:] = water_depth > 0.0
+        marine_nodes_in_order = self.grid.at_node["flow__upstream_node_order"][
+            self.is_submarine[self.grid.at_node["flow__upstream_node_order"]]
+        ]
+        rcvr = self.grid.at_node["flow__receiver_node"]
+        min_depth_increment = 0.1
+        min_depth = min_depth_increment + np.zeros(self.grid.number_of_nodes)
+        cellarea = self.grid.area_of_cell[0]  # assumes all cells same area
+        counter = 0
+        for node in marine_nodes_in_order:
+            if (
+                qs_in[node] > 0.0
+                and self.grid.status_at_node[node] == self.grid.BC_NODE_IS_CORE
+            ):
+                counter += 1
+                sed_depth = qs_in[node] * dt / cellarea
+                max_depo_depth = max(water_depth[node] - min_depth[node], 0.0)
+                depo_depth = min(sed_depth, max_depo_depth)
+                # print(counter, "depo", depo_depth, "at", node, "depth", water_depth[node], self.current_sea_level - self.elev[node])
+                self.elev[node] += depo_depth
+                leftover_depth = sed_depth - depo_depth
+                if leftover_depth > 0.0:
+                    #print("passing", leftover_depth, "from", node, "to", rcvr[node])
+                    qs_in[rcvr[node]] += leftover_depth * cellarea / dt
+                    min_depth[rcvr[node]] += min_depth_increment
+        qs_in[self.is_submarine] = 0.0
 
     def update_submarine_processes(self, dt):
         """Run the submarine diffusion component for one time step dt."""
@@ -554,14 +670,45 @@ class IslandSimulator:
         )
         self.fw_thickness[:] = self.thickness - self.hw_thickness
 
+    def update_igneous_intrusions(self, dt):
+        if (
+            self.current_time >= self.intruder.episode_start_time
+            and self.current_time < self.intruder.last_stop_time
+        ):
+            self.intruder.update(dt, self.current_time)
+            self.thickness[:] = self.fw_thickness + self.hw_thickness
+
     def update(self, dt):
         """Run all components for one time step of duration dt."""
-        self.update_tectonics_and_flexure(dt)
+        # print("before mean hwt, fwt, tt, elev, fpe",
+        #      np.mean(self.hw_thickness),
+        #      np.mean(self.fw_thickness),
+        #      np.mean(self.thickness),
+        #      np.mean(self.elev),
+        #      np.mean(self.fault_plane_elev))
+        self.update_igneous_intrusions(dt)
+        # print("after mean hwt, fwt, tt",
+        #      np.mean(self.hw_thickness),
+        #      np.mean(self.fw_thickness),
+        #      np.mean(self.thickness),
+        #      np.mean(self.elev),
+        #      np.mean(self.fault_plane_elev))
+        self.tec_counter += 1
+        if self.tec_counter == self.tec_interval:
+            self.update_tectonics_and_flexure(dt * self.tec_interval)
+            self.tec_counter = 0
+            # print("TEC update mean hwt, fwt, tt",
+            #      np.mean(self.hw_thickness),
+            #      np.mean(self.fw_thickness),
+            #      np.mean(self.thickness),
+            #      np.mean(self.elev),
+            #      np.mean(self.fault_plane_elev))
         self.update_sea_level(self.current_time)
         self.elev_before_ero_dep[:] = self.elev.copy()
         self.set_boundaries_for_subaerial()
-        self.update_subaerial_processes(dt)
-        self.deposit_river_sediment_at_coast(dt)
+        for _ in range(4):
+            self.update_subaerial_processes(dt / 4)
+            self.deposit_river_sediment_at_coast(dt / 4)
         self.set_boundaries_for_full_domain()
         self.update_submarine_processes(dt)
         self.update_deposit_and_crust_thickness(dt, self.elev_before_ero_dep)
@@ -601,12 +748,21 @@ class IslandSimulator:
             if self.current_time >= self.next_plot:
                 self.frame_num += 1
                 self.fa.run_one_step()  # re-run flow router to update the water-surface height
+                procs = "Sea-level change"
+                if self.current_time < self._extension_duration:
+                    procs += ", tectonic extension"
+                if (self.current_time >= self.intruder.episode_start_time
+                    and self.current_time < self.intruder.last_stop_time):
+                    procs += ", igneous intrusions"
                 display_island(
                     self.grid,
-                    self.current_sea_level,
+                    self.sea_level_history,
+                    self.mean_elevation_history,
+                    self.dt,
                     self.frame_num,
                     self.display_params,
                     sim_time=self.current_time,
+                    procs=procs,
                 )
                 self.next_plot += self.plot_interval
             if self.current_time >= self.next_save:
@@ -615,6 +771,10 @@ class IslandSimulator:
                     self.save_name + str(self.save_num).zfill(self.ndigits) + ".grid"
                 )
                 save_grid(self.grid, this_save_name, clobber=True)
+                np.savetxt("oes_sea_level_history.txt", self.sea_level_history)
+                np.savetxt(
+                    "oes_mean_elevation_history.txt", self.mean_elevation_history
+                )
                 self.next_save += self.save_interval
         rtime = time.time() - start_time
         print("Run loop time", rtime)

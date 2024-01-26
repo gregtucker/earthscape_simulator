@@ -7,7 +7,7 @@ html_for_island_display = """
 <html>
     <head>
         <title>Welcome to Brain Island!</title>
-        <meta http-equiv='refresh' content='60' >
+        <meta http-equiv='refresh' content='340'>
     </head>
     <body>
         <img src='/static/current_island.png'>
