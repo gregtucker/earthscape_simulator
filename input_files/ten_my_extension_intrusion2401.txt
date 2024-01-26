@@ -5,7 +5,7 @@ process:
     sea_level:
         sea_level_delta: 0.4
         source: file
-        sea_level_file_name: ten_my_sea_level.txt
+        sea_level_file_name: ../../input_files/ten_my_sea_level.txt
         drift: 0.0
     tectonic_extension:
         extension_rate_x: 0.0025 
