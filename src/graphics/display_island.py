@@ -56,7 +56,7 @@ def display_island(
     # Get axis objects
     _, ax = plt.subplots(5, 1)
 
-    display_topo_and_rivers(grid, ax[0], params, sim_time=sim_time, procs=procs)
+    display_topo_and_rivers(grid, ax[0], params, current_sea_level=sea_level_history[-1], sim_time=sim_time, procs=procs)
     
     plot_sea_level_history(sea_level_history, time_interval, ax[1])
     
@@ -198,7 +198,7 @@ def plot_cum_ero_dep(grid, ax):
         grid,
         depero,
         cmap="RdYlBu",
-        colorbar_label="Thickness (m)",
+        colorbar_label="Thickness (km)",
         vmin=-half_range,
         vmax=half_range
     )
