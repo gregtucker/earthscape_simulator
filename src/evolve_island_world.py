@@ -559,7 +559,8 @@ class IslandSimulator:
             )
             print(current_time, self.current_sea_level)
         self.sea_level_history.append(self.current_sea_level)
-        self.mean_elevation_history.append(np.mean(self.elev[self.elev > 0.0]))
+        mean_rel_elev = self.elev - self.current_sea_level
+        self.mean_elevation_history.append(np.mean(mean_rel_elev[mean_rel_elev > 0.0]))
 
     def update_subaerial_processes(self, dt):
         """Run subaerial flow routing and fluvial processes."""

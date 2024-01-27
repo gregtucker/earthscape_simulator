@@ -62,7 +62,7 @@ def display_island(
     
     plot_sed_flux(grid, ax[2])
     
-    plot_mean_elev_history(mean_elev_history, time_interval, ax[3])
+    plot_mean_elev_history(mean_elev_history, sea_level_history, time_interval, ax[3])
     
     plot_cum_ero_dep(grid, ax[4])
 
@@ -112,20 +112,23 @@ def plot_sea_level_history(sea_level, dt, ax):
         ax.set_xlim([0, time_scale_max / time_factor])
 
 
-def plot_mean_elev_history(mean_elev, dt, ax):
+def plot_mean_elev_history(mean_elev, sea_level, dt, ax):
     t, time_unit, time_factor, time_scale_max = setup_for_time_axis(len(mean_elev), dt)
 
-    ax.plot(t / time_factor, mean_elev, "b")
+    ax.plot(t / time_factor, mean_elev, "b", label="Relative to sea level")
     ax.plot(max(t) / time_factor, mean_elev[-1], "r.")
+    moho_relative = np.array(mean_elev) + np.array(sea_level)
+    ax.plot(t / time_factor, moho_relative, "k--", label="Relative to moho")
+    ax.plot(max(t) / time_factor, moho_relative[-1], "r.")
     ax.set_title(
         "Mean Elevation History\ncurrent elevation = "
         + str(round(mean_elev[-1], 1))
-        + " m"
+        + " m ASL"
     )
     ax.set_xlabel("Time " + time_unit)
     ax.set_ylabel("Mean subaerial elevation (m)")
-    if time_scale_max > 0:
-        ax.set_xlim([0, time_scale_max / time_factor])
+    ax.set_xlim([0, time_scale_max / time_factor])
+    ax.legend()
 
 
 def display_topo_and_rivers(
