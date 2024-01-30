@@ -51,7 +51,7 @@ Plenty! This is just a prototype. What about variable lithology? (Or even just <
 
 <H1>Comments and questions are welcome!</H1>
 
-If you have ideas on ways to improve on the model, or to improve on its visual representation, please share them! A good way to do this is to post an Issue on the model's <A HREF=https://github.com/gregtucker/earthscape_simulator/issues">GitHub repository site</A>.
+If you have ideas on ways to improve on the model, or to improve on its visual representation, please share them! A good way to do this is to post an Issue on the model's <A HREF="https://github.com/gregtucker/earthscape_simulator/issues">GitHub repository site</A>.
 
 -Greg Tucker, University of Colorado Boulder, January 2024
 
