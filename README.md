@@ -2,6 +2,8 @@
 
 Earthscape Simulator, also known as "Brain Island", is a perpetually running computer model that simulates geological processes on an imaginary island. The simulation is meant to serve two purposes. The first is to provide a visualization of geologic change through processes such as tectonic uplift and subsidence, isostatic adjustment, sea-level variations, and erosion and sedimentation, both on land and in the adjacent ocean. The second is to inspire conversation among the research community about how these "source-to-sink" processes are represented mathematically and computationally, what processes might be missing or incompletely represented, and how we might improve on the model.
 
+<H2>Click <A HREF="https://csdms.colorado.edu/wiki/Island">here</A>to see the latest output.</H2>
+
 <P>
 (If you're reading this on the CSDMS website, where Earthscape Simulator runs, scroll down to view the latest configuration of the island, and to read more about what goes into the simulation model).
 
