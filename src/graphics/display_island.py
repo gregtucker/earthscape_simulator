@@ -20,7 +20,8 @@ def display_island(
     frame_num,
     params,
     sim_time=-1.0,
-    procs=""):
+    procs="",
+):
     """
     Display the island and save the image to a png file.
 
@@ -56,14 +57,21 @@ def display_island(
     # Get axis objects
     _, ax = plt.subplots(5, 1)
 
-    display_topo_and_rivers(grid, ax[0], params, current_sea_level=sea_level_history[-1], sim_time=sim_time, procs=procs)
-    
+    display_topo_and_rivers(
+        grid,
+        ax[0],
+        params,
+        current_sea_level=sea_level_history[-1],
+        sim_time=sim_time,
+        procs=procs,
+    )
+
     plot_sea_level_history(sea_level_history, time_interval, ax[1])
-    
+
     plot_sed_flux(grid, ax[2])
-    
+
     plot_mean_elev_history(mean_elev_history, sea_level_history, time_interval, ax[3])
-    
+
     plot_cum_ero_dep(grid, ax[4])
 
     # Set filename and save to file, then copy file as "latest"
@@ -73,9 +81,11 @@ def display_island(
 
     plt.close()
 
+
 def add_scale_bar(ax):
     ax.plot([10000, 60000], [10000, 10000], "w")
     ax.text(20000, 15000, "50 km", color="white")
+
 
 def setup_for_time_axis(num_vals, dt):
     t = dt * np.arange(num_vals)
@@ -203,19 +213,19 @@ def plot_cum_ero_dep(grid, ax):
         cmap="RdYlBu",
         colorbar_label="Thickness (km)",
         vmin=-half_range,
-        vmax=half_range
+        vmax=half_range,
     )
     plt.title("Cumulative Sedimentation / Erosion")
 
-def set_size(w,h, ax=None):
-    """ w, h: width, height in inches """
+
+def set_size(w, h, ax=None):
+    """w, h: width, height in inches"""
     if not ax:
-        ax=plt.gca()
-    l = ax.figure.subplotpars.left
-    r = ax.figure.subplotpars.right
-    t = ax.figure.subplotpars.top
-    b = ax.figure.subplotpars.bottom
-    figw = float(w)/(r-l)
-    figh = float(h)/(t-b)
+        ax = plt.gca()
+    lf = ax.figure.subplotpars.left
+    rt = ax.figure.subplotpars.right
+    tp = ax.figure.subplotpars.top
+    bt = ax.figure.subplotpars.bottom
+    figw = float(w) / (rt - lf)
+    figh = float(h) / (tp - bt)
     ax.figure.set_size_inches(figw, figh)
-          

@@ -7,7 +7,6 @@
 #
 
 import numpy as np
-from landlab import RasterModelGrid
 
 
 class Intrusion:
@@ -37,14 +36,16 @@ class Intrusion:
 
     def identify_intrusion_nodes(self, x_of_node, y_of_node, intru_x, intru_y, radius):
         """
-        Identify and return array of node IDs affected by an intrusion with a circular footprint of
-        radius `radius` and center coordinates `intru_x` and `intru_y`.
+        Identify and return array of node IDs affected by an intrusion
+        with a circular footprint of radius `radius` and center coordinates
+        `intru_x` and `intru_y`.
 
         Examples
         --------
         >>> from landlab import RasterModelGrid
         >>> grid = RasterModelGrid((6, 6))
-        >>> IgneousIntruder.identify_intrusion_nodes(None, grid.x_of_node, grid.y_of_node, 3.0, 3.0, 2.5)
+        >>> IgneousIntruder.identify_intrusion_nodes(
+        ...     None, grid.x_of_node, grid.y_of_node, 3.0, 3.0, 2.5)
         array([ 7,  8,  9, 10, 13, 14, 15, 16, 19, 20, 21, 22, 25, 26, 27, 28])
         """
         dist2 = (x_of_node - intru_x) ** 2 + (y_of_node - intru_y) ** 2
@@ -112,7 +113,7 @@ class IgneousIntruder:
             self.intrusions.append(this_intrusion)
             if this_intrusion.stop_time > self.last_stop_time:
                 self.last_stop_time = this_intrusion.stop_time
-            #print(ctime + episode_start_time, vars(this_intrusion))
+            # print(ctime + episode_start_time, vars(this_intrusion))
             ctime += mean_waiting_time * np.random.exponential()
 
     def inject_intrusion(self, nodes, rates, depth, dt, contacts, layers):
@@ -120,16 +121,21 @@ class IgneousIntruder:
 
         Notes
         -----
-        Takes a list of *contacts* and *layers*. A *contact* is an array that contains the height either of the
-        surface (the contact between the uppermost layer and the atmosphere or ocean) or the contact between two
-        layers. A *layer* is an array of the same length as each *contact* that contains the thickness of the
-        layer between the corresponding contact and the contact below it (or an arbitrary datum, if it's the last
-        one). Any *layer* can be `None`, in which case it is ignored.
+        Takes a list of *contacts* and *layers*. A *contact* is an array that
+        contains the height either of the surface (the contact between the
+        uppermost layer and the atmosphere or ocean) or the contact between
+        two layers. A *layer* is an array of the same length as each *contact*
+        that contains the thickness of the layer between the corresponding
+        contact and the contact below it (or an arbitrary datum, if it's the
+        last one). Any *layer* can be `None`, in which case it is ignored.
 
-        The inflation of a layer affects the thickness of that particular layer, but it affects the height not
-        just of its own upper contact but also that of each contact lying above. The `layer_rates` and
-        `max_layer_rates` arrays are used to handle this fact: `layer_rates` contains the rate for each relevant
-        node and each layer; `max_layer_rates` is used to raise the height of overlying layers.
+        The inflation of a layer affects the thickness of that particular
+        layer, but it affects the height not just of its own upper contact but
+        also that of each contact lying above. The arrays:
+            `layer_rates` and `max_layer_rates`
+        are used to handle this fact: `layer_rates` contains the rate
+        for each relevant node and each layer; `max_layer_rates` is used to
+        raise the height of overlying layers.
 
         Examples
         --------
@@ -149,7 +155,9 @@ class IgneousIntruder:
         >>> rates = np.array([1.0, 1.0, 1.0])
         >>> contacts = [elev, mid_upr_cont, lwr_mid_cont]
         >>> layers = [upper_layer, mid_layer, lower_layer]
-        >>> IgneousIntruder.inject_intrusion(None, nodes, rates, depth=-3.5, dt=1.0, contacts=contacts, layers=layers)
+        >>> IgneousIntruder.inject_intrusion(
+        ...     None, nodes, rates, depth=-3.5,
+        ...     dt=1.0, contacts=contacts, layers=layers)
         >>> elev[grid.core_nodes]
         array([ 1.,  1.,  1.])
         >>> mid_upr_cont[grid.core_nodes]

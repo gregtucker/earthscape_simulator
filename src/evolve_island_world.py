@@ -9,17 +9,12 @@
 # a hypothetical island micro-continent.
 #
 
-import copy
-import datetime
-import shutil
 import sys
 import time
 
-import cmocean
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from landlab import ModelGrid, RasterModelGrid, create_grid, imshow_grid, load_params
+from landlab import ModelGrid, RasterModelGrid, create_grid, load_params
 from landlab.components import (
     ErosionDeposition,
     Flexure,
@@ -28,8 +23,9 @@ from landlab.components import (
     SimpleSubmarineDiffuser,
 )
 from landlab.io.native_landlab import load_grid, save_grid
-from igneous_intruder import IgneousIntruder
+
 from graphics import display_island
+from igneous_intruder import IgneousIntruder
 
 
 def merge_user_and_default_params(user_params, default_params):
@@ -62,66 +58,8 @@ def get_or_create_node_field(grid, name, dtype="float64"):
     """Get handle to a grid field if it exists, otherwise create it."""
     try:
         return grid.at_node[name]
-    except:
+    except KeyError:
         return grid.add_zeros(name, at="node", dtype=dtype, clobber=True)
-
-
-# def old_display_island(grid, current_sea_level, frame_num, params, sim_time=-1.0, procs=""):
-#     """Display the island and save the image to a png file.
-
-#     Parameters
-#     ----------
-#     grid : Landlab ModelGrid
-#         Reference to the simulation grid object.
-#     current_sea_level : float, m
-#         Current sea level.
-#     frame_num : int
-#         Current frame number, for the file name.
-#     params : dict
-#         Dictionary containing:
-#             max_elev_for_color_scale : float, m
-#                 Maximum elevation for color scale (higher than this gets max color)
-#             scale_fac_for_surface_water : float
-#                 Factor that controls the color for rivers.
-#             area_threshold : float
-#                 Rivers with drainage area >= this get a special color
-#     sim_time : float (optional)
-#         Current time in simulation, yr (default -1 means do not display time)
-#     """
-#     z = grid.at_node["topographic__elevation"]
-#     area = grid.at_node["drainage_area"]
-#     wse = grid.at_node["water_surface__elevation"]
-#     max_elev_for_color_scale = params["max_elev_for_color_scale"]
-#     fresh_water_elev_scale = -(
-#         params["scale_fac_for_surface_water"] * max_elev_for_color_scale
-#     )
-#     earth_sea = z - current_sea_level
-#     is_channel_or_flooded = np.logical_or(area > params["area_threshold"], wse > z)
-#     is_fresh_water = np.logical_and(is_channel_or_flooded, earth_sea > 0.0)
-#     earth_sea[is_fresh_water] = fresh_water_elev_scale
-#     plt.clf()
-#     imshow_grid(
-#         grid,
-#         earth_sea,
-#         cmap=cmocean.cm.topo,
-#         vmin=-max_elev_for_color_scale,
-#         vmax=max_elev_for_color_scale,
-#     )
-#     plt.axis(False)
-#     if sim_time != -1:
-#         if sim_time > 1.0e6:
-#             time_unit = " million"
-#             sim_time /= 1.0e6
-#         else:
-#             time_unit = " thousand"
-#             sim_time /= 1.0e3
-#         ttl = "Time = " + str(round(sim_time, 2)) + time_unit + " years"
-#         if len(procs) > 0:
-#             ttl += "\nProcesses: " + procs
-#         plt.title(ttl)
-#     filename = "island" + str(frame_num).zfill(params["ndigits"]) + ".png"
-#     plt.savefig(filename)
-#     shutil.copy(filename, params["path_for_latest_image"] + "/" + "current_island.png")
 
 
 class IslandSimulator:
@@ -220,7 +158,7 @@ class IslandSimulator:
         "dt": 100.0,  # time-step duration, y
         "run_duration": 250000.0,  # duration of run, y
         "start_time": 0.0,  # starting time of simulation, y
-        "click_years_per_sec": 0.0,  # click rate in sim yrs per clock sec (0 means max speed)
+        "click_years_per_sec": 0.0,  # click rate in sim yrs per clock sec (0 = max)
     }
 
     DEFAULT_OUTPUT_PARAMS = {
@@ -229,7 +167,7 @@ class IslandSimulator:
         "save_name": "rift-island-save",
         "ndigits": 3,  # number of digits for output files
         "max_elev_for_color_scale": 1650.0,  # elevation for color scale in plotting, m
-        "scale_fac_for_surface_water": 0.3,  # surface water gets color equiv to -this times above scale, -
+        "scale_fac_for_surface_water": 0.3,  # surface water color = -this x above scale
         "area_threshold": 5.0e7,  # minimum drainage area for displayed streams, m2
         "path_for_latest_image": ".",  # file path for location of latest output image
     }
@@ -272,7 +210,6 @@ class IslandSimulator:
             sim_time=0.0,
             procs=procs,
         )
-
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
@@ -640,11 +577,10 @@ class IslandSimulator:
                 sed_depth = qs_in[node] * dt / cellarea
                 max_depo_depth = max(water_depth[node] - min_depth[node], 0.0)
                 depo_depth = min(sed_depth, max_depo_depth)
-                # print(counter, "depo", depo_depth, "at", node, "depth", water_depth[node], self.current_sea_level - self.elev[node])
                 self.elev[node] += depo_depth
                 leftover_depth = sed_depth - depo_depth
                 if leftover_depth > 0.0:
-                    #print("passing", leftover_depth, "from", node, "to", rcvr[node])
+                    # print("passing", leftover_depth, "from", node, "to", rcvr[node])
                     qs_in[rcvr[node]] += leftover_depth * cellarea / dt
                     min_depth[rcvr[node]] += min_depth_increment
         qs_in[self.is_submarine] = 0.0
@@ -748,12 +684,14 @@ class IslandSimulator:
             self.update_until(next_pause, dt, click_yps=click_years_per_sec)
             if self.current_time >= self.next_plot:
                 self.frame_num += 1
-                self.fa.run_one_step()  # re-run flow router to update the water-surface height
+                self.fa.run_one_step()  # re-run router to update water-surface height
                 procs = "Sea-level change"
                 if self.current_time < self._extension_duration:
                     procs += ", tectonic extension"
-                if (self.current_time >= self.intruder.episode_start_time
-                    and self.current_time < self.intruder.last_stop_time):
+                if (
+                    self.current_time >= self.intruder.episode_start_time
+                    and self.current_time < self.intruder.last_stop_time
+                ):
                     procs += ", igneous intrusions"
                 display_island(
                     self.grid,
