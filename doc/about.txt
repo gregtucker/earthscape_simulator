@@ -10,16 +10,16 @@ Scroll down to view the latest configuration of the island, and to read more abo
 Earthscape Simulator is a Python-language computer program that uses a Landlab grid and Landlab components to model the ongoing geologic evolution of a hypothetical "chunk" of continental crust (or perhaps over-thickened oceanic crust?) embedded in ocean lithosphere. The starting condition consists of a roughly circular island, with a more or less cone-shaped topography, and some randomly generated bumps and depressions. The source code for the simulator and the initial-topography generation can be found on GitHub at <A HREF="https://github.com/gregtucker/earthscape_simulator">https://github.com/gregtucker/earthscape_simulator</A>. 
 
 <P>
-Here are some of the processes and other elements in the currently running version model (as of January 2024):
+Here are some of the processes and other elements in the currently running version model (as of February 2024):
 
 <P>
 <B>Representing the landscape and seascape:</B> The simulation uses a Landlab HexModelGrid, with hexagonal grid cells that are spaced 1 km apart.
 
 <P>
-<B>Sea-level change:</B> The current run uses a sea-level history reconstructed for the past 10 million years. The history combines a high-resolution reconstruction for the last ~2 million years with a lower-resolution reconstruction for the remaining time. The sea-level curve is interpolated onto the model's time steps (which are currently 100 years).
+<B>Sea-level change:</B> The current run uses a sea-level variation composed of a sum of sine curves in four of the (approximately) Milankovitch frequencies: 19, 22, 41, 100, and 405 thousand years; the amplitudes were chosen more or less arbitrarily to give maximum sea-level variation on the order of 120 meters. (Othe runs have used a sea-level history reconstructed for the past 10 million years. The history combines a high-resolution reconstruction for the last ~2 million years with a lower-resolution reconstruction for the remaining time.) The sea-level curve is interpolated onto the model's time steps, which are currently 50 years.
 
 <P>
-<B>Epeirogenic uplift:</B> It's possible to add a steady, uniform rate of relative sea-level change to represent epeirogenic (i.e., regional) uplift, such as might occur due to temperature variation in the mantle. (In this particular run it is set to zero.)
+<B>Epeirogenic uplift:</B> The current run has a slow (0.00005 m/yr), steady, uniform rate of relative sea-level change to represent epeirogenic (i.e., regional) uplift, such as might occur due to temperature variation in the mantle. This is implemented by adding a long-term falling trend to relative sea level.
 
 <P>
 <B>Rift tectonics:</B> The island is subject to rifting, which is represented by a listric ("spoon-shaped", or in this case, exponential-function-shaped) detachment fault. The fault's precise location and strike angle are generated at random. Every so often (a time period also chosen at random), the fault will jump to the east by a certain (also random) amount. Hence, while rifting is active, a series of faults will develop. The fault plane, which dips eastward, has a 60-degree dip near the surface, but it flattens out with depth until it becomes a 10 km deep horizontal detachment. All material above this detachment surface - that is, everything in the hangingwall of the fault - moves eastward at a specified rate (the rate in the current run is 2.5 mm/year). Fault geometry and motion are computed by a Landlab component called <A HREF="https://landlab.readthedocs.io/en/latest/reference/components/tectonics.html">ListricKinematicExtender</A>, which in turn uses the <A HREF="https://landlab.readthedocs.io/en/latest/reference/components/advection.html#landlab.components.advection.advection_solver_tvd.AdvectionSolverTVD">AdvectionSolverTVD</A> component to calculate the lateral advection of the hangingwall.
@@ -43,7 +43,7 @@ Here are some of the processes and other elements in the currently running versi
 <B>Marine sediment transport:</B> Transport of sediment below sea level is assumed to be driven by wave action, which entrains sediment into the water column, and gravity, which pulls it downslope. These processes are represented using a nonlinear diffusion equation, in which the quantity "diffused" is elevation (representing sediment volume at a given location). To represent the influence of waves, the diffusion coefficient is constant above a specified wave-base depth, and declines exponentially with depth where the depth is below the wave base. This process is implemented by the Landlab <A HREF="https://landlab.readthedocs.io/en/latest/reference/components/marine_sediment_transport.html">SimpleSubmarineDiffuser</A> component.
 
 <P>
-<B>Model speed:</B> Can't it run any faster? Yes! Although normally we want our numerical codes to run as fast as possible, the Earthscape Simulator is a case where we want to slow it down a bit and enjoy the ride. Consequently, the maximum run speed is limited to a user-specified value (currently 20 model years per second).
+<B>Model speed:</B> Can't it run any faster? Yes! Although normally we want our numerical codes to run as fast as possible, the Earthscape Simulator is a case where we want to slow it down a bit and enjoy the ride. Consequently, the maximum run speed is limited to a user-specified value (currently 5 model years per second).
 
 <H1>What's missing?</H1>
 
@@ -54,4 +54,4 @@ Plenty! This is just a prototype. What about variable lithology? (Or even just <
 If you have ideas on ways to improve on the model, or to improve on its visual representation, please share them! A good way to do this is to post an Issue on the model's <A HREF=https://github.com/gregtucker/earthscape_simulator/issues">GitHub repository site</A>.
 
 <P>
--Greg Tucker, University of Colorado Boulder, January 2024
+-Greg Tucker, University of Colorado Boulder, February 2024
