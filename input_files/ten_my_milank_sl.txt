@@ -1,0 +1,45 @@
+grid_setup:
+    source: file
+    grid_file_name: ../../initial_conditions/initial_island-300x400.grid
+process:
+    sea_level:
+        sea_level_delta: 0.4
+        source: file
+        sea_level_file_name: ../../input_files/ten_my_milank_sl.txt
+        drift: 0.00050
+    tectonic_extension:
+        extension_rate_x: 0.0025 
+        fault_strike: 87.0
+        fault_x0: 50000.0
+    igneous_intrusion:
+        episode_duration: 5000000.0
+        episode_start_time: 2000000.0
+        mean_waiting_time: 50000.0
+        thickness_min: 100.0
+        thickness_max: 1100.0
+        radius_min: 2000.0
+        radius_max: 38000.0
+        log_duration_min: 5.0
+        log_duration_max: 6.0
+        depth_min: 2000.0
+        depth_max: 18000.0
+    other:
+        crust_datum: -1.5e4
+        unit_weight: 26000.0
+        extension_duration: 10.0e6
+        fault_jump:
+            jump_interval_mean: 400000.0
+            jump_interval_std: 160000.0
+            jump_distance_mean: 10000.0
+            jump_distance_std: 4000.0
+run_control:
+    random_seed: 12
+    dt: 50.0
+    run_duration: 10000000.0 
+    click_years_per_sec: 0.0
+output:
+    plot_interval: 2000.0
+    save_interval: 500000.0
+    path_for_latest_image: "../../app/static"
+
+
