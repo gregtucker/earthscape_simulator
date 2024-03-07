@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import cmocean
 from landlab import imshow_grid
 
+_HALFRANGE_FOR_ERODEP = 5000.0  # plot color range for image of cumulative erosion/deposition
 
 def display_island(
     grid,
@@ -206,7 +207,7 @@ def plot_cum_ero_dep(grid, ax):
     plt.axis(False)
     plt.axis("tight")
     depero = grid.at_node["cumulative_deposit_thickness"] / 1000.0
-    half_range = np.amax(np.abs(depero))
+    half_range = _HALFRANGE_FOR_ERODEP
     imshow_grid(
         grid,
         depero,
