@@ -13,7 +13,7 @@ import cmocean
 from landlab import imshow_grid
 
 _HALFRANGE_FOR_ERODEP = (
-    5000.0  # plot color range for image of cumulative erosion/deposition
+    5.0  # plot color range for image of cumulative erosion/deposition
 )
 _NFRAMES = 60
 _MIN_FRAMES = 1
@@ -59,8 +59,9 @@ def display_island(
     procs : str, optional
         List of current processes (to be displayed as part of title)
     """
-    plt.rcParams["figure.figsize"] = (7, 28)
-
+    plt.rcParams["figure.figsize"] = (7, 24)
+    plt.rcParams['figure.constrained_layout.use'] = True
+    
     # Get axis objects
     _, ax = plt.subplots(5, 1)
 
@@ -83,7 +84,7 @@ def display_island(
 
     # Set filename and save to file, then copy file as "latest"
     filename = "island" + str(frame_num).zfill(params["ndigits"]) + ".png"
-    plt.savefig(filename)
+    plt.savefig(filename, bbox_inches="tight")
     shutil.copy(filename, params["path_for_latest_image"] + "/" + "current_island.png")
 
     plt.close()

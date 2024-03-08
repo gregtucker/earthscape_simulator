@@ -296,15 +296,13 @@ class IslandSimulator:
         self.sea_level_history = [self.current_sea_level]
         self.mean_elevation_history = [np.mean(self.elev[self.elev > 0.0])]
         self._sea_level_option = params["source"][0].lower()
+        self._sea_level_delta = params["sea_level_delta"]
         if self._sea_level_option == "r":  # "random" option
-            self._sea_level_delta = params["sea_level_delta"]
             self._sea_level_amplitude = params["amplitude"]
             self._sea_level_period = params["period"]
             self._prior_base_sl = 0.0
         elif self._sea_level_option == "f":  # file option
             self._sl_curve = np.loadtxt(params["sea_level_file_name"], delimiter=",")
-        plt.plot(self._sl_curve[:, 0], self._sl_curve[:, 1])
-        plt.savefig("sltest.png")
         self._sea_level_drift = params["drift"]
 
     def setup_for_output(self, params):
@@ -492,6 +490,7 @@ class IslandSimulator:
         elif self._sea_level_option == "f":  # from file
             self.current_sea_level = (
                 np.interp(current_time, self._sl_curve[:, 0], self._sl_curve[:, 1])
+                + self._sea_level_delta * np.random.randn()
                 - self._sea_level_drift * current_time
             )
             print(current_time, self.current_sea_level)
