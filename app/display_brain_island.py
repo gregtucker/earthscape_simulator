@@ -11,6 +11,8 @@ html_for_island_display = """
     </head>
     <body>
         <img src='/static/current_island.png'>
+        <h1>Animation:</h1>
+        <img src='/static/current_island_movie.gif'>
     </body>
 </html>
 """

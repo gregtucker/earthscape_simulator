@@ -38,7 +38,7 @@ run_control:
     run_duration: 10000000.0 
     click_years_per_sec: 0.0
 output:
-    plot_interval: 200.0
+    plot_interval: 2000.0
     save_interval: 500000.0
     path_for_latest_image: "../../app/static"
 
