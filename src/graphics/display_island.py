@@ -8,10 +8,16 @@ Greg Tucker, Jan 2024
 import shutil
 import numpy as np
 import matplotlib.pyplot as plt
+import imageio
 import cmocean
 from landlab import imshow_grid
 
-_HALFRANGE_FOR_ERODEP = 5000.0  # plot color range for image of cumulative erosion/deposition
+_HALFRANGE_FOR_ERODEP = (
+    5000.0  # plot color range for image of cumulative erosion/deposition
+)
+_NFRAMES = 60
+_MIN_FRAMES = 1
+
 
 def display_island(
     grid,
@@ -81,6 +87,14 @@ def display_island(
     shutil.copy(filename, params["path_for_latest_image"] + "/" + "current_island.png")
 
     plt.close()
+
+    make_anim(
+        "island",
+        frame_num,
+        _NFRAMES,
+        params["ndigits"],
+        params["path_for_latest_image"],
+    )
 
 
 def add_scale_bar(ax):
@@ -230,3 +244,22 @@ def set_size(w, h, ax=None):
     figw = float(w) / (rt - lf)
     figh = float(h) / (tp - bt)
     ax.figure.set_size_inches(figw, figh)
+
+
+def make_anim(basename, endframe, nframes, ndigits, latest_image_path):
+    startframe = max(endframe - nframes, 0)
+
+    if (endframe - startframe) + 1 >= _MIN_FRAMES:
+        images = []
+        for i in range(startframe, endframe + 1):
+            img_name = basename + str(i).zfill(ndigits) + ".png"
+            try:
+                images.append(imageio.imread(img_name))
+            except FileNotFoundError:
+                print("Cannot find file", img_name)
+                raise FileNotFoundError
+        imageio.mimsave(basename + "_movie.gif", images)
+        shutil.copy(
+            basename + "_movie.gif",
+            latest_image_path + "/" + "current_island_movie.gif",
+        )
