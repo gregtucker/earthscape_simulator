@@ -8,7 +8,7 @@ Greg Tucker, Jan 2024
 import shutil
 import numpy as np
 import matplotlib.pyplot as plt
-import imageio
+import imageio.v3 as iio
 import cmocean
 from landlab import imshow_grid
 
@@ -61,7 +61,7 @@ def display_island(
     """
     plt.rcParams["figure.figsize"] = (7, 24)
     plt.rcParams['figure.constrained_layout.use'] = True
-    
+
     # Get axis objects
     _, ax = plt.subplots(5, 1)
 
@@ -255,11 +255,12 @@ def make_anim(basename, endframe, nframes, ndigits, latest_image_path):
         for i in range(startframe, endframe + 1):
             img_name = basename + str(i).zfill(ndigits) + ".png"
             try:
-                images.append(imageio.imread(img_name))
+                images.append(iio.imread(img_name))
             except FileNotFoundError:
                 print("Cannot find file", img_name)
                 raise FileNotFoundError
-        imageio.mimsave(basename + "_movie.gif", images)
+        iio.imwrite(basename + "_movie.gif", images, duration=60, loop=0)
+        #imageio.mimsave(basename + "_movie.gif", images)
         shutil.copy(
             basename + "_movie.gif",
             latest_image_path + "/" + "current_island_movie.gif",

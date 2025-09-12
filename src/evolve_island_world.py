@@ -23,10 +23,18 @@ from landlab.components import (
     SimpleSubmarineDiffuser,
 )
 from landlab.io.native_landlab import load_grid, save_grid
+from landlab.io.legacy_vtk import write_legacy_vtk
 
 from graphics import display_island
 from igneous_intruder import IgneousIntruder
 
+
+_FIELDS_FOR_VTK = [
+    "topographic__elevation",
+    "cumulative_deposit_thickness",
+    "drainage_area",
+    "topographic__steepest_slope",
+]
 
 def merge_user_and_default_params(user_params, default_params):
     """Merge default parameters into the user-parameter dictionary, adding
@@ -210,6 +218,15 @@ class IslandSimulator:
             sim_time=0.0,
             procs=procs,
         )
+
+        write_legacy_vtk(
+            self.save_name + "0".zfill(self.ndigits) + ".vtk",
+            self.grid,
+            z_at_node="topographic__elevation",
+            fields=_FIELDS_FOR_VTK,
+            clobber=True  
+        )
+
 
     def setup_grid(self, grid_params):
         """Load or create the grid.
@@ -708,7 +725,15 @@ class IslandSimulator:
                 this_save_name = (
                     self.save_name + str(self.save_num).zfill(self.ndigits) + ".grid"
                 )
-                save_grid(self.grid, this_save_name, clobber=True)
+                self.grid.at_node["drainage_area"][self.is_submarine] = 0.0
+                write_legacy_vtk(
+                    self.save_name + str(self.save_num).zfill(self.ndigits) + ".vtk",
+                    self.grid,
+                    z_at_node="topographic__elevation",
+                    fields=_FIELDS_FOR_VTK,
+                    clobber=True  
+                )
+                #save_grid(self.grid, this_save_name, clobber=True)
                 np.savetxt("oes_sea_level_history.txt", self.sea_level_history)
                 np.savetxt(
                     "oes_mean_elevation_history.txt", self.mean_elevation_history
